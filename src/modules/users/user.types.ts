@@ -1,8 +1,7 @@
 import { z } from "zod";
+import { genderEnum } from "../../common/types/common.types";
 
 
-// defining enums - using as const because it might not infer the exact values of each elements of arrays of values:
-const genderEnum = ["male", "female", "other"] as const;
 
 export const createUserSchemas = z.object({
     name: z.string().min(3).max(255),
