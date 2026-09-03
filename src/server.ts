@@ -1,28 +1,70 @@
+import "dotenv/config";
+import Fastify from "fastify";
+import postgres from "postgres";
+import { drizzle } from "drizzle-orm/postgres-js";
+import { migrate } from "drizzle-orm/postgres-js/migrator";
 
-import Fastify from 'fastify';
-import { userRoutes } from "./routes/users.ts";
+import { userRoutes } from "./modules/users/user.routes";
 
-const app = Fastify({ 
-  logger: true, 
-})
+const client = postgres(process.env.DATABASE_URL!, {
+  max: 1,
+});
 
-// For heath updates
-app.get('/health', async () => {
-  return{
-    status: 'healthy',
+const db = drizzle(client);
+
+const fastify = Fastify({
+  logger: true,
+});
+
+// Health check
+fastify.get("/health", async () => {
+  return {
+    status: "ok",
+    uptime: process.uptime(),
+    memory: process.memoryUsage(),
     timestamp: new Date().toISOString(),
-    uptime: process.uptime()
   };
 });
 
-// For breif test screen
-app.get("/", async () => {
-  return "Health is perfectly fine && nice!"
-})
+// Root route
+fastify.get("/", async () => {
+  return "Hello World";
+});
 
-//run the router functions
-app.register(userRoutes);
+// API routes
+fastify.register(userRoutes, {
+  prefix: "/api/users",
+});
 
-app.listen({
-  port: 3000
-})
+async function start() {
+  try {
+    // 1. Check database connection
+    await client`SELECT NOW()`;
+
+    fastify.log.info("🚀🚀Database connected successfully🚀🚀");
+
+    // 2. Run migrations
+    await migrate(db, {
+      migrationsFolder: "./drizzle",
+    });
+
+    fastify.log.info("🚀🚀Database migrations completed🚀🚀");
+
+    // 3. Start server
+    await fastify.listen({
+      port: 3000,
+      host: "0.0.0.0",
+      listenTextResolver: (address) => {
+        return `🚀🚀Custom message: Server is listening @ ${address}🚀🚀`;
+      },
+    });
+  } catch (error) {
+    fastify.log.error(error);
+
+    await client.end();
+
+    process.exit(1);
+  }
+}
+
+start();
