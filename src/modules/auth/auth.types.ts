@@ -11,7 +11,7 @@ export const registerUserSchema = z.object({
         issue.input === undefined || issue.input == "" ? "Email is required" : "Invalid Email format" 
     }),
 
-    passwordHash: z.string().regex(/^(?=.*?[A-Z])(?=.*?[a-z])(?=.*?[0-9])(?=.*?[#?!@$%^&*-]).{8,}$/,
+    password: z.string().regex(/^(?=.*?[A-Z])(?=.*?[a-z])(?=.*?[0-9])(?=.*?[#?!@$%^&*-]).{8,}$/,
                     "Password must be at least 8 characters and contain an uppercase letter, lowercase letter, number, and special character."),
     
     gender: z.enum(genderEnum).default("other"),
@@ -25,7 +25,7 @@ export const loginUserSchema = z.object({
         issue.input === undefined || issue.input == "" ? "Email is required" : "Invalid Email format" 
     }),
     
-    passwordHash: z.string().regex(/^(?=.*?[A-Z])(?=.*?[a-z])(?=.*?[0-9])(?=.*?[#?!@$%^&*-]).{8,}$/,
+    password: z.string().regex(/^(?=.*?[A-Z])(?=.*?[a-z])(?=.*?[0-9])(?=.*?[#?!@$%^&*-]).{8,}$/,
                   "Password must be at least 8 characters and contain an uppercase letter, lowercase letter, number, and special character."),
     
 })

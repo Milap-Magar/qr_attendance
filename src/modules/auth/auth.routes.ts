@@ -9,8 +9,8 @@ export const authRoutes : FastifyPluginAsync = async (fastify) => {
     
     // login routes
     fastify.post("/login",  async (request, reply) => {
-        const { email, passwordHash } = request.body as loginUserTypes; 
-        const data = await authServices.login({email, passwordHash});
+        const { email, password } = request.body as loginUserTypes; 
+        const data = await authServices.login({email, password});
         if(data === "wollahhh you are INNNN!!"){
             return reply.status(200)
             .send({
@@ -30,8 +30,8 @@ export const authRoutes : FastifyPluginAsync = async (fastify) => {
 
     // register routes
     fastify.post("/register", async(request, reply) => {
-        const {name, email, passwordHash, gender} = request.body as registerUserTypes;
-        const data = await authServices.register({name, email, passwordHash, gender}); 
+        const {name, email, password, gender} = request.body as registerUserTypes;
+        const data = await authServices.register({name, email, password, gender}); 
         if(data === "User Exists!!"){
             // 409 for conflict
             return reply.status(409).send({

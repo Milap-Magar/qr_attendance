@@ -15,7 +15,7 @@ export const users = pgTable('users', {
     // varchar is used for fixed length of characters
     email: varchar('email', {length: 255}).notNull().unique(),
     // text is used for unbounded characters it can be multiple or lesser too.
-    passwordHash: text('password_hash').notNull(),
+    password: text('password_hash').notNull(),
     // enums are used for picking up values between specific outcomes.
     gender: genderEnum('gender').notNull().default('other'),
     role: roleEnum('role').notNull().default('users'),

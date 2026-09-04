@@ -4,6 +4,7 @@ import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { userRoutes } from "./src/modules/users/user.routes";
+import { authRoutes } from "./src/modules/auth/auth.routes";
 
 const client = postgres(process.env.DATABASE_URL!, {
   max: 1,
@@ -34,6 +35,9 @@ fastify.get("/", async () => {
 fastify.register(userRoutes, {
   prefix: "/api/users",
 });
+fastify.register(authRoutes,{
+  prefix: "/api"
+})
 
 async function start() {
   try {
