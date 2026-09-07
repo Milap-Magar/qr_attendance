@@ -5,6 +5,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { userRoutes } from "./src/modules/users/user.routes";
 import { authRoutes } from "./src/modules/auth/auth.routes";
+import fastifyJwt from "@fastify/jwt";
 
 const client = postgres(process.env.DATABASE_URL!, {
   max: 1,
@@ -16,6 +17,10 @@ const fastify = Fastify({
   logger: true,
 });
 
+await fastify.register(fastifyJwt, {
+  secret: process.env.JWT_SECRET!,
+});
+
 // Health check
 fastify.get("/health", async () => {
   return {
@@ -25,6 +30,7 @@ fastify.get("/health", async () => {
     timestamp: new Date().toISOString(),
   };
 });
+
 
 // Root route
 fastify.get("/", async () => {

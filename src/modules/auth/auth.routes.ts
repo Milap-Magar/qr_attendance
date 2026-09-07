@@ -11,12 +11,18 @@ export const authRoutes : FastifyPluginAsync = async (fastify) => {
     fastify.post("/login",  async (request, reply) => {
         const { email, password } = request.body as loginUserTypes; 
         const data = await authServices.login({email, password});
-        if(data === "wollahhh you are INNNN!!"){
+        if(data.status === 200){
+            const token = await fastify.jwt.sign({
+                userId: data.data?.id,
+                userEmail: data.data?.email,
+            });
+
             return reply.status(200)
             .send({
-                message: data
+                message: "Login Successfull",
+                accessToken: token, 
             });
-        }else if(data === "Email not found"){
+        }else if(data.status === 404){
             return reply.status(404).send({
                 message: data
             });

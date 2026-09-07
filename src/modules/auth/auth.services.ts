@@ -1,4 +1,3 @@
-import { email } from 'zod';
 import { eq } from "drizzle-orm"
 import { db } from "../../db"
 import { users } from "../../db/schema"
@@ -20,12 +19,24 @@ export const authServices = {
             const isValid = await bcrypt.compare(password , passwordDB);
             // check for the password for now just normal password
             if(isValid){
-                return "wollahhh you are INNNN!!";
+                return {
+                    status: 200,
+                    data: {
+                        id: data.id,
+                        email: data.email,
+                    },
+                };
             }else{
-                return "password incorrect";
+                return {
+                    status: 401,
+                    message: "password incorrect",
+                };
             }
         }else{
-            return "Email not found"
+            return {
+                status: 404,
+                message: "Email not found"
+            }
         }
     },
 

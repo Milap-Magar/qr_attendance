@@ -9,12 +9,23 @@ import type { CreateUserType, UpdateUserType } from "./user.types";
 export const userServices = {
   // fetch all the users
   async getAllUsers () {
-    return await db.select().from(users); 
+    return await db.select({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+      gender: users.gender,
+      role: users.role,
+      isActive: users.is_active,
+    }).from(users); 
   },
 
   // fetch all user by Id
   async getUserById(id : string){
-    const selectedUser = await db.select().from(users).where(eq(users.id, id));
+    const [selectedUser] = await db.select({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+    }).from(users).where(eq(users.id, id));
     if(selectedUser){
       return selectedUser;
     }

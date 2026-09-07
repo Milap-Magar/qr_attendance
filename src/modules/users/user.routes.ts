@@ -3,11 +3,32 @@ import { userServices } from "./user.service";
 import type { CreateUserType, UpdateUserType } from "./user.types";
 
 export const userRoutes: FastifyPluginAsync = async (fastify) => {
+
+  // /user/me
+  fastify.get("/me", async (request, reply) => {
+  await request.jwtVerify();
+
+  const { userId} = request.user as { userId : string};
+
+  const user = await userServices.getUserById(userId);
+
+  return reply.send(user);
+});
+
   // GET /api/users
   fastify.get('/',async(request, reply) => {
+    // provides all the datasets
     const users = await userServices.getAllUsers();
+    // verify the access token
     return reply.status(200).send(users);
   });
+
+  // GET /api/user/:id 
+  fastify.get(`/:id` , async(request, reply) => {
+    const {id} = request.params as { id: string };
+    const user = await userServices.getUserById(id);
+    return reply.status(200).send(user)
+  })
 
   //POST /api/users
   fastify.post('/', async(request, reply) => {
