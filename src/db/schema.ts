@@ -48,14 +48,10 @@ export const attendanceLogs = pgTable("attendance_logs", {
 // QR Credentials Schema 
 //-------------
 
-export const qrCredentials = pgTable("qr_credentials", {
+export const qrSessions = pgTable("qr_sessions", {
   id: uuid("id").defaultRandom().primaryKey(),
 
-  userId: uuid("user_id")
-    .notNull()
-    .references(() => users.id),
-
-  tokenHash: text("token_hash")
+  token: text("token")
     .notNull()
     .unique(),
 
@@ -63,11 +59,17 @@ export const qrCredentials = pgTable("qr_credentials", {
     .notNull()
     .default(true),
 
-    createdAt: timestamp("created_at", {
+  expiresAt: timestamp("expires_at", {
     withTimezone: true,
-    })
+  }).notNull(),
+
+  createdAt: timestamp("created_at", {
+    withTimezone: true,
+  })
     .notNull()
     .defaultNow(),
 
-  revokedAt: timestamp("revoked_at"),
+  revokedAt: timestamp("revoked_at", {
+    withTimezone: true,
+  }),
 });

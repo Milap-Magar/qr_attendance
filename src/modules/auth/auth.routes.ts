@@ -14,7 +14,7 @@ export const authRoutes : FastifyPluginAsync = async (fastify) => {
         if(data.status === 200){
             const token = await fastify.jwt.sign({
                 userId: data.data?.id,
-                userEmail: data.data?.email,
+                role: data.data?.role,
             });
 
             return reply.status(200)

@@ -1,6 +1,5 @@
 import { z } from "zod";
-import { genderEnum } from "../../common/types/common.types";
-
+import { genderEnum, roleEnum } from "../../common/types/common.types";
 
 
 export const createUserSchemas = z.object({
@@ -17,6 +16,7 @@ export const createUserSchemas = z.object({
     password: z.string().min(8),
 
     gender: z.enum(genderEnum).default("other"),
+    role: z.enum(roleEnum).default("user"),
 })
 
 export const updateUserSchema = z.object({

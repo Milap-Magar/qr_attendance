@@ -23,7 +23,7 @@ export const authServices = {
                     status: 200,
                     data: {
                         id: data.id,
-                        email: data.email,
+                        role: data.role,
                     },
                 };
             }else{

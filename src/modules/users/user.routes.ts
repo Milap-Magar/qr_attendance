@@ -32,8 +32,8 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
 
   //POST /api/users
   fastify.post('/', async(request, reply) => {
-    const {name, email, password, gender} = request.body as CreateUserType;
-    const newUser = await userServices.addUsers({name, email, password, gender});
+    const {name, email, password, gender, role} = request.body as CreateUserType;
+    const newUser = await userServices.addUsers({name, email, password, gender, role});
     return reply.status(201).send(newUser); 
   })
 
