@@ -5,6 +5,29 @@ import { db } from "../../db";
 import { qrSessions } from "../../db/schema";
 
 export const qrServices = {
+
+  //fetching the qr
+  async getQr(){
+    const token = crypto.randomBytes(32).toString("hex");
+
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+
+    const expiresAt = new Date(Date.now());
+
+    const [qr] = await db.insert(qrSessions).values({token: tokenHash, isActive: true, expiresAt,}).returning();
+
+    return {
+      status: 200,
+      message: "QR genereated",
+      data:{
+        qrSessionId: qr?.id,
+        token,
+        expiresAt
+      }
+    }
+  },
+  
+  // verifying the qr
   async verifyQr(token: string) {
     // 1. Hash the incoming token
     const tokenHash = crypto

@@ -6,6 +6,7 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { userRoutes } from "./src/modules/users/user.routes";
 import { authRoutes } from "./src/modules/auth/auth.routes";
 import fastifyJwt from "@fastify/jwt";
+import { qrRoutes } from "./src/modules/qr/qr.routes";
 
 const client = postgres(process.env.DATABASE_URL!, {
   max: 1,
@@ -39,10 +40,14 @@ fastify.get("/", async () => {
 
 // API routes
 fastify.register(userRoutes, {
-  prefix: "/api/users",
-});
+  prefix: "/api/users"
+})
+
 fastify.register(authRoutes,{
   prefix: "/api"
+})
+fastify.register(qrRoutes,{
+  prefix: '/api/qr'
 })
 
 async function start() {

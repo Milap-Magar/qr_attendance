@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { userServices } from "./user.service";
 import type { CreateUserType, UpdateUserType } from "./user.types";
+import { authMiddleware } from "../auth/auth.middleware";
 
 export const userRoutes: FastifyPluginAsync = async (fastify) => {
 
@@ -16,7 +17,9 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
 });
 
   // GET /api/users
-  fastify.get('/',async(request, reply) => {
+  fastify.get('/',{
+    preHandler: authMiddleware
+  }, async(request, reply) => {
     // provides all the datasets
     const users = await userServices.getAllUsers();
     // verify the access token
@@ -24,21 +27,27 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // GET /api/user/:id 
-  fastify.get(`/:id` , async(request, reply) => {
+  fastify.get(`/:id` ,{
+    preHandler: authMiddleware
+  }, async(request, reply) => {
     const {id} = request.params as { id: string };
     const user = await userServices.getUserById(id);
     return reply.status(200).send(user)
   })
 
   //POST /api/users
-  fastify.post('/', async(request, reply) => {
+  fastify.post('/',{
+    preHandler: authMiddleware
+  },  async(request, reply) => {
     const {name, email, password, gender, role} = request.body as CreateUserType;
     const newUser = await userServices.addUsers({name, email, password, gender, role});
     return reply.status(201).send(newUser); 
   })
 
   // PATCH /api/users
-  fastify.patch('/', async (request, reply) => {
+  fastify.patch('/',{
+    preHandler: authMiddleware
+  },  async (request, reply) => {
     const {id, name} = request.body as UpdateUserType;
     const user = await userServices.getUserById(id);
     if(!user){

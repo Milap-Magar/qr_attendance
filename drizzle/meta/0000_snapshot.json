@@ -1,5 +1,5 @@
 {
-  "id": "cfecea50-b996-4194-9530-9a8f8cd41326",
+  "id": "839d1305-590b-4cbb-9b8c-7bb108485996",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -51,8 +51,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.qr_credentials": {
-      "name": "qr_credentials",
+    "public.qr_sessions": {
+      "name": "qr_sessions",
       "schema": "",
       "columns": {
         "id": {
@@ -62,14 +62,8 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
-        "user_id": {
-          "name": "user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "token_hash": {
-          "name": "token_hash",
+        "token": {
+          "name": "token",
           "type": "text",
           "primaryKey": false,
           "notNull": true
@@ -81,43 +75,29 @@
           "notNull": true,
           "default": true
         },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
         "created_at": {
           "name": "created_at",
-          "type": "timestamp with time zone",
+          "type": "timestamp",
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "revoked_at": {
-          "name": "revoked_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {},
-      "foreignKeys": {
-        "qr_credentials_user_id_users_id_fk": {
-          "name": "qr_credentials_user_id_users_id_fk",
-          "tableFrom": "qr_credentials",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "qr_credentials_token_hash_unique": {
-          "name": "qr_credentials_token_hash_unique",
+        "qr_sessions_token_unique": {
+          "name": "qr_sessions_token_unique",
           "nullsNotDistinct": false,
           "columns": [
-            "token_hash"
+            "token"
           ]
         }
       },

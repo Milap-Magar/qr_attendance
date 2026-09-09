@@ -51,25 +51,16 @@ export const attendanceLogs = pgTable("attendance_logs", {
 export const qrSessions = pgTable("qr_sessions", {
   id: uuid("id").defaultRandom().primaryKey(),
 
-  token: text("token")
-    .notNull()
-    .unique(),
+  token: text("token").notNull().unique(),
 
   isActive: boolean("is_active")
     .notNull()
     .default(true),
 
-  expiresAt: timestamp("expires_at", {
-    withTimezone: true,
-  }).notNull(),
+  expiresAt: timestamp("expires_at")
+    .notNull(),
 
-  createdAt: timestamp("created_at", {
-    withTimezone: true,
-  })
+  createdAt: timestamp("created_at")
     .notNull()
     .defaultNow(),
-
-  revokedAt: timestamp("revoked_at", {
-    withTimezone: true,
-  }),
 });
