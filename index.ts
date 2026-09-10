@@ -6,7 +6,8 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { userRoutes } from "./src/modules/users/user.routes";
 import { authRoutes } from "./src/modules/auth/auth.routes";
 import fastifyJwt from "@fastify/jwt";
-import { qrRoutes } from "./src/modules/qr/qr.routes";
+import { rbacRoutes } from "./src/modules/rbac/rbac.routes";
+// import { qrRoutes } from "./src/modules/qr/qr.routes";
 
 const client = postgres(process.env.DATABASE_URL!, {
   max: 1,
@@ -43,11 +44,11 @@ fastify.register(userRoutes, {
   prefix: "/api/users"
 })
 
-fastify.register(authRoutes,{
+fastify.register(authRoutes, {
   prefix: "/api"
 })
-fastify.register(qrRoutes,{
-  prefix: '/api/qr'
+fastify.register(rbacRoutes, {
+  prefix:"/rbac"
 })
 
 async function start() {
@@ -66,7 +67,7 @@ async function start() {
 
     // 3. Start server
     await fastify.listen({
-      port: 3000,
+      port: 3001,
       host: "0.0.0.0",
       listenTextResolver: (address) => {
         return `🚀Custom message: Server is listening @ ${address}🚀`;

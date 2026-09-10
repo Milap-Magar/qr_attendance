@@ -1,9 +1,9 @@
 import { boolean, uuid, varchar, pgTable, text, timestamp, pgEnum } from 'drizzle-orm/pg-core';
 
-
 //for enum values we use the following:
 export const genderEnum = pgEnum('gender', ['male', 'female', 'other']);
 export const roleEnum = pgEnum('role', ['system', 'admin', 'teachers', 'users']);
+export const methodEnum = pgEnum('method', ['device', 'card']);
 
 // ------------
 // User Schema 
@@ -29,38 +29,35 @@ export const users = pgTable('users', {
 });
 
 // ------------
-// Attendance Schema 
+// Attendance - Sessions 
 //-------------
-
-export const attendanceLogs = pgTable("attendance_logs", {
-    // id
-    id: uuid('id').defaultRandom().primaryKey(),
-
-    // user id
-    userId: uuid('user_id').notNull().references(() => users.id),
-
-    // scanned at
-    scannedAt: timestamp('scanned_at').notNull().defaultNow(),
-
+export const attendance_sessions = pgTable('attendace_sessions',{
+  id: uuid('id').defaultRandom().primaryKey(),
+  title: text('title').notNull(),
+  opened_by: uuid('user_id').notNull().references(()=> users.id),
+  opens_at: timestamp('opens_at', {
+    withTimezone: true,
+  }).notNull()
+    .defaultNow(),
+  closes_at: timestamp('closes_at').notNull(),
+  is_open: boolean('is_open').notNull().default(false),
 });
+
 
 // ------------
 // QR Credentials Schema 
 //-------------
-
-export const qrSessions = pgTable("qr_sessions", {
-  id: uuid("id").defaultRandom().primaryKey(),
-
-  token: text("token").notNull().unique(),
-
-  isActive: boolean("is_active")
-    .notNull()
-    .default(true),
-
-  expiresAt: timestamp("expires_at")
-    .notNull(),
-
-  createdAt: timestamp("created_at")
+export const credentials = pgTable("credentials",{
+  id: uuid('id').defaultRandom().primaryKey(),
+  // adding the foreign key in database schema
+  user_id: uuid('user_id').notNull().references(() => users.id),
+  tokenHash: text('token').unique().notNull(),
+  method: methodEnum('method').notNull(),
+  scannedAt: timestamp('scanned_at').notNull().defaultNow(),
+  createdAt: timestamp("created_at", {
+    withTimezone: true,
+    })
     .notNull()
     .defaultNow(),
+  revoked_at: timestamp('revoked_at').notNull()
 });

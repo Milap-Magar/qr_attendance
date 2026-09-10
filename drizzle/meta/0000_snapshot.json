@@ -1,11 +1,11 @@
 {
-  "id": "839d1305-590b-4cbb-9b8c-7bb108485996",
+  "id": "c5049cf2-2588-4294-ad02-2236b57d6ab2",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
-    "public.attendance_logs": {
-      "name": "attendance_logs",
+    "public.attendace_sessions": {
+      "name": "attendace_sessions",
       "schema": "",
       "columns": {
         "id": {
@@ -15,25 +15,44 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
         "user_id": {
           "name": "user_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
         },
-        "scanned_at": {
-          "name": "scanned_at",
-          "type": "timestamp",
+        "opens_at": {
+          "name": "opens_at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "closes_at": {
+          "name": "closes_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_open": {
+          "name": "is_open",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {},
       "foreignKeys": {
-        "attendance_logs_user_id_users_id_fk": {
-          "name": "attendance_logs_user_id_users_id_fk",
-          "tableFrom": "attendance_logs",
+        "attendace_sessions_user_id_users_id_fk": {
+          "name": "attendace_sessions_user_id_users_id_fk",
+          "tableFrom": "attendace_sessions",
           "tableTo": "users",
           "columnsFrom": [
             "user_id"
@@ -51,8 +70,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.qr_sessions": {
-      "name": "qr_sessions",
+    "public.credentials": {
+      "name": "credentials",
       "schema": "",
       "columns": {
         "id": {
@@ -62,39 +81,66 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
         "token": {
           "name": "token",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "is_active": {
-          "name": "is_active",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp",
+        "method": {
+          "name": "method",
+          "type": "method",
+          "typeSchema": "public",
           "primaryKey": false,
           "notNull": true
         },
-        "created_at": {
-          "name": "created_at",
+        "scanned_at": {
+          "name": "scanned_at",
           "type": "timestamp",
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
         }
       },
       "indexes": {},
-      "foreignKeys": {},
+      "foreignKeys": {
+        "credentials_user_id_users_id_fk": {
+          "name": "credentials_user_id_users_id_fk",
+          "tableFrom": "credentials",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "qr_sessions_token_unique": {
-          "name": "qr_sessions_token_unique",
+        "credentials_token_unique": {
+          "name": "credentials_token_unique",
           "nullsNotDistinct": false,
           "columns": [
             "token"
@@ -197,6 +243,14 @@
         "male",
         "female",
         "other"
+      ]
+    },
+    "public.method": {
+      "name": "method",
+      "schema": "public",
+      "values": [
+        "device",
+        "card"
       ]
     },
     "public.role": {

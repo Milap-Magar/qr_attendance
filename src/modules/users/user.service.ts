@@ -25,6 +25,7 @@ export const userServices = {
       id: users.id,
       name: users.name,
       email: users.email,
+      role: users.role,
     }).from(users).where(eq(users.id, id));
     if(selectedUser){
       return selectedUser;
