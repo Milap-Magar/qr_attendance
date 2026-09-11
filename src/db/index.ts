@@ -1,9 +1,10 @@
-import 'dotenv/config';
-import {drizzle} from 'drizzle-orm/postgres-js';
-import postgres from 'postgres';
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
+import { config } from "../config";
 import * as schema from "./schema";
 
-//connecting the database
-const client = postgres(process.env.DATABASE_URL);
+// ONE connection pool for the whole app. Everything imports `db` from here.
+export const client = postgres(config.databaseUrl);
+
 // exporting the schema's database
-export const db = drizzle(client, {schema});
+export const db = drizzle(client, { schema });

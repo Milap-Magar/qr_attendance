@@ -1,6 +1,6 @@
 # QR Attendance — Next Steps Checklist
 
-**Updated:** 2026-09-10 · **State:** auth ✅, users ✅, QR issue/verify (needs rework) 🟡, RBAC 🚧 ~30% (reviewed, see §2), attendance ❌, realtime ❌
+**Updated:** 2026-09-11 · **State:** auth + refresh tokens ✅, users ✅, RBAC ✅, QR cards + scan ✅, attendance sessions/records ✅, zod validation ✅, tests ✅ (see API.md) · open: rate limiting, photo on scan, realtime, frontend
 
 ---
 
@@ -64,13 +64,13 @@ this module RBAC, hasn't been written yet.
 
 ### 🔴 Bugs — `GET /rbac/` cannot work as written
 
-- [ ] **`rbac.routes.ts:8` — `request.id` is not the user's id.** In Fastify, `request.id` is the
+- [X] **`rbac.routes.ts:8` — `request.id` is not the user's id.** In Fastify, `request.id` is the
       *request* identifier: I ran it, the value is the string `"req-1"`. You then feed it to
       `where(eq(users.id, "req-1"))` against a `uuid` column, so Postgres throws
       `invalid input syntax for type uuid` and the route 500s on **every** call — it has never
       returned a role. The user id lives in the JWT: `(request.user as { userId: string }).userId`,
       the same cast `user.routes.ts:12` already does.
-- [ ] **`rbac.routes.ts:9` — the 404 branch sends nothing.** `if (data.status === 200)` with no
+- [X] **`rbac.routes.ts:9` — the 404 branch sends nothing.** `if (data.status === 200)` with no
       `else`, so a missing user returns `undefined` from an async handler; Fastify never sends a
       reply and the connection hangs until the client times out. Always `return reply.send(...)` on
       every path.
@@ -90,7 +90,7 @@ this module RBAC, hasn't been written yet.
 - [ ] **`PERMISSIONS` is declared but never used.** Nothing maps a role to a permission set, so the
       constants are decoration. Add `ROLE_PERMISSIONS: Record<Role, readonly Permission[]>` — that
       table *is* your policy, and having it in one file is what makes the whole approach pay off.
-- [ ] **Decide role-based or permission-based and commit.** Both are half-built. Permissions are the
+- [ ] **Decide role-based or permission-based and commit.** Both are half-built. P\\\\\\ermissions are the
       better call for this app (`reports:read` survives you adding a `staff` role; `role === 'admin'`
       scattered across 12 routes does not) — but pick one.
 - [ ] **`rbac.types.ts` hand-retypes the constants.** Derive them so a typo becomes a compile error:

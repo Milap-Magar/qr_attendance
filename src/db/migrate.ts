@@ -1,15 +1,8 @@
-import 'dotenv/config';
-import { drizzle } from 'drizzle-orm/postgres-js';
-import { migrate } from 'drizzle-orm/postgres-js/migrator';
-import postgres from 'postgres';
+// `bun run db:migrate` — applies every SQL file in ./drizzle that the DB hasn't run yet.
+// (the server also does this on startup, see index.ts)
+import { migrate } from "drizzle-orm/postgres-js/migrator";
+import { client, db } from "./index";
 
-async function runMigrations() {
-  const client = postgres(process.env.DATABASE_URL!, { max: 1 });
-  const db = drizzle(client);
-
-  await migrate(db, { migrationsFolder: './drizzle' });
-  console.log('Migrations completed');
-  await client.end();
-}
-
-runMigrations();   
+await migrate(db, { migrationsFolder: "./drizzle" });
+console.log("Migrations completed");
+await client.end();

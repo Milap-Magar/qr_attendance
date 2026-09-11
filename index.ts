@@ -1,55 +1,10 @@
-import "dotenv/config";
-import Fastify from "fastify";
-import postgres from "postgres";
-import { drizzle } from "drizzle-orm/postgres-js";
+// Entry point: `bun run dev` (auto-restart) or `bun run start`
 import { migrate } from "drizzle-orm/postgres-js/migrator";
-import { userRoutes } from "./src/modules/users/user.routes";
-import { authRoutes } from "./src/modules/auth/auth.routes";
-import fastifyJwt from "@fastify/jwt";
-import { rbacRoutes } from "./src/modules/rbac/rbac.routes";
-// import { qrRoutes } from "./src/modules/qr/qr.routes";
+import { buildApp } from "./src/app";
+import { client, db } from "./src/db";
+import { config } from "./src/config";
 
-const client = postgres(process.env.DATABASE_URL!, {
-  max: 1,
-});
-
-const db = drizzle(client);
-
-const fastify = Fastify({
-  logger: true,
-});
-
-await fastify.register(fastifyJwt, {
-  secret: process.env.JWT_SECRET!,
-});
-
-// Health check
-fastify.get("/health", async () => {
-  return {
-    status: "ok",
-    uptime: process.uptime(),
-    memory: process.memoryUsage(),
-    timestamp: new Date().toISOString(),
-  };
-});
-
-
-// Root route
-fastify.get("/", async () => {
-  return "Hello World";
-});
-
-// API routes
-fastify.register(userRoutes, {
-  prefix: "/api/users"
-})
-
-fastify.register(authRoutes, {
-  prefix: "/api"
-})
-fastify.register(rbacRoutes, {
-  prefix:"/rbac"
-})
+const fastify = await buildApp();
 
 async function start() {
   try {
@@ -67,7 +22,7 @@ async function start() {
 
     // 3. Start server
     await fastify.listen({
-      port: 3001,
+      port: config.port,
       host: "0.0.0.0",
       listenTextResolver: (address) => {
         return `🚀Custom message: Server is listening @ ${address}🚀`;
@@ -80,6 +35,15 @@ async function start() {
 
     process.exit(1);
   }
+}
+
+// Ctrl+C / docker stop → finish in-flight requests, close the DB pool, exit
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.on(signal, async () => {
+    await fastify.close();
+    await client.end();
+    process.exit(0);
+  });
 }
 
 start();

@@ -1,14 +1,6 @@
-export type Role =
-    | "admin"
-    | "system"
-    | "techers"
-    | "users"
+// derived, never retyped by hand — the source lists live in
+// common.types.ts (roles) and rbac.constants.ts (permissions)
+export type { Role } from "../../common/types/common.types";
 
-export type Permission =
-    | "users:read"
-    | "users:create"
-    | "users:update"
-    | "users:delete"
-    | "profile:read"
-    | "profile:update"
-    | "reports:read"
+import type { PERMISSIONS } from "./rbac.constants";
+export type Permission = (typeof PERMISSIONS)[number];

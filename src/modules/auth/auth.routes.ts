@@ -1,52 +1,60 @@
 // these are bascially for routing.
 // also known as - a signal that shows the road
+//
+// HOW THE TWO TOKENS WORK
+//   accessToken  — JWT, lives 15 min. Send it on every request: `Authorization: Bearer <accessToken>`
+//   refreshToken — random string, lives 7 days. Only ever sent to POST /api/auth/refresh.
+//
+//   login ──▶ { accessToken, refreshToken }
+//   ...15 min later an API call returns 401...
+//   POST /refresh { refreshToken } ──▶ NEW { accessToken, refreshToken }  (old refresh token is now dead)
+//   retry the API call with the new accessToken
+//   logout ──▶ POST /logout { refreshToken }  (kills it on the server)
 
 import { type FastifyPluginAsync } from "fastify";
 import { authServices } from './auth.services';
-import type { loginUserTypes, registerUserTypes } from './auth.types';
+import { loginUserSchema, refreshTokenSchema, registerUserSchema } from './auth.types';
+import type { Role } from "../../common/types/common.types";
 
 export const authRoutes : FastifyPluginAsync = async (fastify) => {
-    
-    // login routes
-    fastify.post("/login",  async (request, reply) => {
-        const { email, password } = request.body as loginUserTypes; 
-        const data = await authServices.login({email, password});
-        if(data.status === 200){
-            const token = await fastify.jwt.sign({
-                userId: data.data?.id,
-                role: data.data?.role,
-            });
 
-            return reply.status(200)
-            .send({
-                message: "Login Successfull",
-                accessToken: token, 
-            });
-        }else if(data.status === 404){
-            return reply.status(404).send({
-                message: data
-            });
-        }else{
-            return reply.status(401).send({
-                message: data
-            })
-        }
+    // signs the JWT (access token) + stores a new refresh token
+    async function issueTokens(user: { id: string; role: Role }) {
+        const accessToken = fastify.jwt.sign({ userId: user.id, role: user.role });
+        const refreshToken = await authServices.createRefreshToken(user.id);
+        return { accessToken, refreshToken };
+    }
 
-    }),
-
-    // register routes
+    // POST /api/auth/register — creates a student account and logs it in straight away
     fastify.post("/register", async(request, reply) => {
-        const {name, email, password, gender} = request.body as registerUserTypes;
-        const data = await authServices.register({name, email, password, gender}); 
-        if(data === "User Exists!!"){
-            // 409 for conflict
-            return reply.status(409).send({
-                message: data
-            })
-        }else{
-            return reply.status(201).send({
-                message: "User Created Successfully"
-            })
-        }
+        // .parse() validates the body; on bad input it throws → 400 (see error handler in src/app.ts)
+        const body = registerUserSchema.parse(request.body);
+        const user = await authServices.register(body);
+        const tokens = await issueTokens(user);
+        return reply.status(201).send({ message: "User Created Successfully", user, ...tokens });
+    })
+
+    // POST /api/auth/login
+    fastify.post("/login",  async (request, reply) => {
+        const body = loginUserSchema.parse(request.body);
+        const user = await authServices.login(body);
+        const tokens = await issueTokens(user);
+        return reply.status(200).send({ message: "Login Successfull", user, ...tokens });
+    })
+
+    // POST /api/auth/refresh — trade a refresh token for a new pair of tokens
+    fastify.post("/refresh", async (request, reply) => {
+        const { refreshToken } = refreshTokenSchema.parse(request.body);
+        const { user, refreshToken: newRefreshToken } = await authServices.rotateRefreshToken(refreshToken);
+        const accessToken = fastify.jwt.sign({ userId: user.id, role: user.role });
+        return reply.status(200).send({ user, accessToken, refreshToken: newRefreshToken });
+    })
+
+    // POST /api/auth/logout — the access token still works until it expires (max 15 min),
+    // so the frontend should also delete both tokens from its storage.
+    fastify.post("/logout", async (request, reply) => {
+        const { refreshToken } = refreshTokenSchema.parse(request.body);
+        await authServices.revokeRefreshToken(refreshToken);
+        return reply.status(204).send();
     })
 }

@@ -8,6 +8,20 @@
       "when": 1789010242039,
       "tag": "0000_massive_archangel",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1789103704637,
+      "tag": "0001_drop_legacy_qr_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789103765722,
+      "tag": "0002_auth_and_attendance",
+      "breakpoints": true
     }
   ]
 }

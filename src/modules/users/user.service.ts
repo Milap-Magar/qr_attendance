@@ -1,53 +1,59 @@
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
+import bcrypt from "bcryptjs";
 import { db } from "../../db";
 import { users } from "../../db/schema";
+import { AppError } from "../../common/errors";
+import type { Role } from "../../common/types/common.types";
 import type { CreateUserType, UpdateUserType } from "./user.types";
 
-
-
+// The ONLY columns we ever send to a client. Use it in every select/returning,
+// so password_hash can't leak by accident.
+export const publicUserColumns = {
+  id: users.id,
+  name: users.name,
+  email: users.email,
+  gender: users.gender,
+  role: users.role,
+  isActive: users.is_active,
+  createdAt: users.createdAt,
+};
 
 export const userServices = {
-  // fetch all the users
-  async getAllUsers () {
-    return await db.select({
-      id: users.id,
-      name: users.name,
-      email: users.email,
-      gender: users.gender,
-      role: users.role,
-      isActive: users.is_active,
-    }).from(users); 
+  // fetch all the users (optionally only one role)
+  async getAllUsers (role?: Role) {
+    return await db.select(publicUserColumns)
+      .from(users)
+      .where(role ? eq(users.role, role) : undefined)
+      .orderBy(asc(users.name));
   },
 
-  // fetch all user by Id
+  // fetch user by Id
   async getUserById(id : string){
-    const [selectedUser] = await db.select({
-      id: users.id,
-      name: users.name,
-      email: users.email,
-      role: users.role,
-    }).from(users).where(eq(users.id, id));
-    if(selectedUser){
-      return selectedUser;
+    const [selectedUser] = await db.select(publicUserColumns).from(users).where(eq(users.id, id));
+    if(!selectedUser){
+      throw new AppError(404, "User not found!", "USER_NOT_FOUND");
     }
+    return selectedUser;
   },
 
-  // add users
+  // add users (password gets hashed, same as register)
   async addUsers(data: CreateUserType) {
-    const [newUser] = await db.insert(users).values(data as any).returning();
-    return newUser;
+    const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, data.email));
+    if(existing){
+      throw new AppError(409, "Email is already registered", "EMAIL_TAKEN");
+    }
+    const hash = await bcrypt.hash(data.password, 10);
+    const [newUser] = await db.insert(users).values({ ...data, password: hash }).returning(publicUserColumns);
+    return newUser!;
   },
 
   // update users
-  async updateUsers(updateData: UpdateUserType){
-    const {id, name} = updateData;
-    const selectedId = await db.select().from(users).where(eq(users.id, id));
-
-    if(selectedId){
-      // update the user
-      // returning() gives as array like [] so no need to give like [user] or it might get like [[user]]
-      const updatedUser = await db.update(users).set({ name: name}).where(eq(users.id, id)).returning();
-      return updatedUser;
+  async updateUsers(id: string, updateData: UpdateUserType){
+    // returning() gives an array, so [updatedUser] picks the first (and only) row
+    const [updatedUser] = await db.update(users).set(updateData).where(eq(users.id, id)).returning(publicUserColumns);
+    if(!updatedUser){
+      throw new AppError(404, "User not found!", "USER_NOT_FOUND");
     }
+    return updatedUser;
   },
 }
