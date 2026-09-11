@@ -13,19 +13,30 @@
 
 import { type FastifyPluginAsync } from "fastify";
 import { authServices } from './auth.services';
-import { loginUserSchema, refreshTokenSchema, registerUserSchema } from './auth.types';
+import { loginUserSchema, refreshTokenSchema, registerSchoolSchema, registerUserSchema } from './auth.types';
 import type { Role } from "../../common/types/common.types";
 
 export const authRoutes : FastifyPluginAsync = async (fastify) => {
 
+    const signAccessToken = (user: { id: string; role: Role; organizationId: string | null }) =>
+        fastify.jwt.sign({ userId: user.id, role: user.role, orgId: user.organizationId });
+
     // signs the JWT (access token) + stores a new refresh token
-    async function issueTokens(user: { id: string; role: Role }) {
-        const accessToken = fastify.jwt.sign({ userId: user.id, role: user.role });
+    async function issueTokens(user: { id: string; role: Role; organizationId: string | null }) {
+        const accessToken = signAccessToken(user);
         const refreshToken = await authServices.createRefreshToken(user.id);
         return { accessToken, refreshToken };
     }
 
-    // POST /api/auth/register — creates a student account and logs it in straight away
+    // POST /api/auth/register-school — a school/college signs up. The caller becomes its admin, logged in.
+    fastify.post("/register-school", async(request, reply) => {
+        const body = registerSchoolSchema.parse(request.body);
+        const { user, organization } = await authServices.registerSchool(body);
+        const tokens = await issueTokens(user);
+        return reply.status(201).send({ message: "School created", user, organization, ...tokens });
+    })
+
+    // POST /api/auth/register — a student joins a school with its join code, logged in straight away
     fastify.post("/register", async(request, reply) => {
         // .parse() validates the body; on bad input it throws → 400 (see error handler in src/app.ts)
         const body = registerUserSchema.parse(request.body);
@@ -46,7 +57,7 @@ export const authRoutes : FastifyPluginAsync = async (fastify) => {
     fastify.post("/refresh", async (request, reply) => {
         const { refreshToken } = refreshTokenSchema.parse(request.body);
         const { user, refreshToken: newRefreshToken } = await authServices.rotateRefreshToken(refreshToken);
-        const accessToken = fastify.jwt.sign({ userId: user.id, role: user.role });
+        const accessToken = signAccessToken(user);
         return reply.status(200).send({ user, accessToken, refreshToken: newRefreshToken });
     })
 

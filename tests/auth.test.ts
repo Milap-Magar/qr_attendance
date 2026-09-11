@@ -1,12 +1,13 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { createTestApp, PASSWORD, resetDb, type TestApp } from "./helpers";
+import { createTestApp, getDefaultOrg, PASSWORD, resetDb, type TestApp } from "./helpers";
 
 let app: TestApp;
-const student = { name: "Ram Bahadur", email: "ram@test.com", password: PASSWORD };
+let student: { name: string; email: string; password: string; joinCode: string };
 
 beforeAll(async () => {
   await resetDb();
   app = await createTestApp();
+  student = { name: "Ram Bahadur", email: "ram@test.com", password: PASSWORD, joinCode: (await getDefaultOrg()).joinCode };
 });
 afterAll(() => app.close());
 
@@ -15,7 +16,7 @@ describe("register", () => {
     const res = await app.inject({ method: "POST", url: "/api/auth/register", payload: student });
     expect(res.statusCode).toBe(201);
     const body = res.json();
-    expect(body.user).toMatchObject({ email: "ram@test.com", role: "users" });
+    expect(body.user).toMatchObject({ email: "ram@test.com", role: "users", organizationId: (await getDefaultOrg()).id });
     expect(body.user.password).toBeUndefined();
     expect(body.accessToken).toBeString();
     expect(body.refreshToken).toBeString();
@@ -68,11 +69,11 @@ describe("access token", () => {
     const { accessToken } = (await app.inject({ method: "POST", url: "/api/auth/login", payload: { email: student.email, password: PASSWORD } })).json();
     const res = await app.inject({ method: "GET", url: "/api/users/me", headers: { authorization: `Bearer ${accessToken}` } });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toMatchObject({ email: student.email, role: "users", permissions: ["profile:read", "profile:update"] });
+    expect(res.json()).toMatchObject({ email: student.email, role: "users", permissions: ["profile:read", "profile:update", "qr:self"] });
   });
 
   test("expired token → 401", async () => {
-    const expired = app.jwt.sign({ userId: crypto.randomUUID(), role: "users" }, { expiresIn: -10 });
+    const expired = app.jwt.sign({ userId: crypto.randomUUID(), role: "users", orgId: null }, { expiresIn: -10 });
     const res = await app.inject({ method: "GET", url: "/api/users/me", headers: { authorization: `Bearer ${expired}` } });
     expect(res.statusCode).toBe(401);
   });

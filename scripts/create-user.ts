@@ -1,14 +1,20 @@
-// Create any user from the terminal — this is how you get your FIRST admin,
-// since the public /register endpoint only ever creates students.
+// Create any user from the terminal.
 //
-//   bun run create-user --name "Admin" --email admin@school.com --password 'Admin@123' --role admin
+// The platform operator (you) — belongs to no school, sees every school:
+//   bun run create-user --name "Platform Owner" --email you@hajir.app --password 'Admin@123' --role system
 //
-// roles: system | admin | teachers | users   (default: users)
+// Someone inside a school (schools normally sign up at /signup, this is the fallback):
+//   bun run create-user --school K7QM-X2PD --name "Admin" --email admin@school.com --password 'Admin@123' --role admin
+//
+// roles: system | admin | teachers | users   (default: users). --school = the school's join code.
 import { parseArgs } from "node:util";
 import { ZodError, z } from "zod";
 import { client } from "../src/db";
+import { roleEnum } from "../src/common/types/common.types";
 import { createUserSchemas } from "../src/modules/users/user.types";
 import { userServices } from "../src/modules/users/user.service";
+import { joinCodeSchema } from "../src/modules/organizations/organization.types";
+import { organizationServices } from "../src/modules/organizations/organization.services";
 
 const { values } = parseArgs({
   options: {
@@ -17,14 +23,24 @@ const { values } = parseArgs({
     password: { type: "string" },
     role: { type: "string" },
     gender: { type: "string" },
+    school: { type: "string" },
   },
 });
 
+// same validation as the API (password rules etc.), but the CLI may also create `system`
+const cliSchema = createUserSchemas.extend({
+  role: z.enum(roleEnum).default("users"),
+  school: joinCodeSchema.optional(),
+}).refine((v) => (v.role === "system") === (v.school === undefined), {
+  message: "--school <join code> is required for every role except system (and not allowed for system)",
+  path: ["school"],
+});
+
 try {
-  // same validation as the API, so the password rules etc. still apply
-  const input = createUserSchemas.parse(values);
-  const user = await userServices.addUsers(input);
-  console.log("✅ User created:", user);
+  const { school, ...input } = cliSchema.parse(values);
+  const organization = school ? await organizationServices.findByJoinCode(school) : null;
+  const user = await userServices.addUsers(input, organization?.id ?? null);
+  console.log("✅ User created:", { ...user, school: organization?.name ?? "(platform)" });
 } catch (error) {
   if (error instanceof ZodError) console.error("❌ Invalid input:\n" + z.prettifyError(error));
   else console.error("❌", error instanceof Error ? error.message : error);

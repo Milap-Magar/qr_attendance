@@ -1,27 +1,20 @@
-import {
-  isRouteErrorResponse,
-  Links,
-  Meta,
-  Outlet,
-  Scripts,
-  ScrollRestoration,
-} from "react-router";
+import { isRouteErrorResponse, Link, Links, Meta, Outlet, Scripts, ScrollRestoration } from "react-router";
+import { Loader2Icon } from "lucide-react";
 
 import type { Route } from "./+types/root";
+import { Button } from "~/components/ui/button";
+import { Toaster } from "~/components/ui/sonner";
+import { TooltipProvider } from "~/components/ui/tooltip";
+import { BRAND, pageTitle } from "~/lib/brand";
 import "./app.css";
 
-export const links: Route.LinksFunction = () => [
-  { rel: "preconnect", href: "https://fonts.googleapis.com" },
-  {
-    rel: "preconnect",
-    href: "https://fonts.gstatic.com",
-    crossOrigin: "anonymous",
-  },
-  {
-    rel: "stylesheet",
-    href: "https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap",
-  },
+export const meta: Route.MetaFunction = () => [
+  { title: pageTitle() },
+  { name: "description", content: BRAND.description },
+  { name: "theme-color", content: "#4f46e5" },
 ];
+
+export const links: Route.LinksFunction = () => [{ rel: "icon", href: "/favicon.svg", type: "image/svg+xml" }];
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
@@ -42,34 +35,41 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  return <Outlet />;
+  return (
+    <TooltipProvider>
+      <Outlet />
+      <Toaster position="top-right" richColors />
+    </TooltipProvider>
+  );
+}
+
+// SPA mode: shown while the first clientLoaders run
+export function HydrateFallback() {
+  return (
+    <div className="flex min-h-svh items-center justify-center">
+      <Loader2Icon className="size-6 animate-spin text-muted-foreground" />
+    </div>
+  );
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
-  let message = "Oops!";
+  let title = "Something went wrong";
   let details = "An unexpected error occurred.";
-  let stack: string | undefined;
 
   if (isRouteErrorResponse(error)) {
-    message = error.status === 404 ? "404" : "Error";
-    details =
-      error.status === 404
-        ? "The requested page could not be found."
-        : error.statusText || details;
-  } else if (import.meta.env.DEV && error && error instanceof Error) {
+    title = error.status === 404 ? "Page not found" : `Error ${error.status}`;
+    details = error.status === 404 ? "The page you're looking for doesn't exist." : error.statusText || details;
+  } else if (error instanceof Error) {
     details = error.message;
-    stack = error.stack;
   }
 
   return (
-    <main className="pt-16 p-4 container mx-auto">
-      <h1>{message}</h1>
-      <p>{details}</p>
-      {stack && (
-        <pre className="w-full p-4 overflow-x-auto">
-          <code>{stack}</code>
-        </pre>
-      )}
+    <main className="flex min-h-svh flex-col items-center justify-center gap-3 p-6 text-center">
+      <h1 className="text-2xl font-semibold">{title}</h1>
+      <p className="max-w-md text-muted-foreground">{details}</p>
+      <Button asChild variant="outline" className="mt-2">
+        <Link to="/dashboard">Back to dashboard</Link>
+      </Button>
     </main>
   );
 }

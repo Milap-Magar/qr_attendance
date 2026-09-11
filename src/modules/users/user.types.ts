@@ -1,14 +1,17 @@
 import { z } from "zod";
-import { genderEnum, roleEnum } from "../../common/types/common.types";
+import { genderEnum, roleEnum, type Role } from "../../common/types/common.types";
+
+// roles a school can give its own people. `system` (platform operator) is only made from the CLI.
+export const schoolRoleEnum = ["admin", "teachers", "users"] as const;
 import { emailSchema, passwordSchema } from "../auth/auth.types";
 
-// POST /api/users — an admin/system account creates someone (can pick the role)
+// POST /api/users — a school admin adds someone to THEIR school (can pick the role)
 export const createUserSchemas = z.object({
     name: z.string().trim().min(3).max(255),
     email: emailSchema,
     password: passwordSchema,
     gender: z.enum(genderEnum).default("other"),
-    role: z.enum(roleEnum).default("users"),
+    role: z.enum(schoolRoleEnum).default("users"),
 })
 
 // PATCH /api/users/:id — every field optional, send only what changed.
@@ -28,4 +31,6 @@ export const listUsersQuerySchema = z.object({
 
 // exporting the user infered schema as fastify requires proper json as if ajv
 export type CreateUserType = z.infer<typeof createUserSchemas>;
+// what userServices.addUsers() accepts: any role, including `system` (the CLI script needs that)
+export type NewUserType = Omit<CreateUserType, "role"> & { role: Role };
 export type UpdateUserType = z.infer<typeof updateUserSchema>;

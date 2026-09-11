@@ -155,3 +155,58 @@ describe("records + close", () => {
     expect(res.json().code).toBe("SESSION_CLOSED");
   });
 });
+
+describe("phone QR (device credentials)", () => {
+  let phoneSession: string;
+  let owner: Awaited<ReturnType<typeof loginAs>>;
+  const scan = (token: string) =>
+    app.inject({ method: "POST", url: "/api/qr/scan", headers: teacher.auth, payload: { sessionId: phoneSession, token } });
+
+  beforeAll(async () => {
+    owner = await loginAs(app, "users");
+    phoneSession = (await app.inject({ method: "POST", url: "/api/attendance/sessions", headers: teacher.auth, payload: { title: "Phones", closesAt: inOneHour() } })).json().id;
+  });
+
+  test("student sets up their phone → 201 device token that scans", async () => {
+    const res = await app.inject({ method: "POST", url: "/api/qr/credentials/me", headers: owner.auth });
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({ userId: owner.user.id, method: "device" });
+    expect(res.json().token).toBeString();
+
+    expect((await scan(res.json().token)).statusCode).toBe(201);
+  });
+
+  test("setting up a phone keeps the printed card working", async () => {
+    const student2 = await loginAs(app, "users");
+    const card = (await app.inject({ method: "POST", url: "/api/qr/credentials", headers: admin.auth, payload: { userId: student2.user.id } })).json();
+    await app.inject({ method: "POST", url: "/api/qr/credentials/me", headers: student2.auth });
+
+    expect((await scan(card.token)).statusCode).toBe(201);
+  });
+
+  test("a second phone setup revokes the first phone", async () => {
+    const student3 = await loginAs(app, "users");
+    const first = (await app.inject({ method: "POST", url: "/api/qr/credentials/me", headers: student3.auth })).json();
+    const second = (await app.inject({ method: "POST", url: "/api/qr/credentials/me", headers: student3.auth })).json();
+
+    const old = await scan(first.token);
+    expect(old.statusCode).toBe(403);
+    expect(old.json().code).toBe("QR_REVOKED");
+    expect((await scan(second.token)).statusCode).toBe(201);
+  });
+
+  test("re-issuing the printed card keeps the phone working", async () => {
+    const student4 = await loginAs(app, "users");
+    const phone = (await app.inject({ method: "POST", url: "/api/qr/credentials/me", headers: student4.auth })).json();
+    await app.inject({ method: "POST", url: "/api/qr/credentials", headers: admin.auth, payload: { userId: student4.user.id } });
+
+    expect((await scan(phone.token)).statusCode).toBe(201);
+  });
+
+  test("staff cannot use /credentials/me", async () => {
+    for (const who of [teacher, admin]) {
+      const res = await app.inject({ method: "POST", url: "/api/qr/credentials/me", headers: who.auth });
+      expect(res.statusCode).toBe(403);
+    }
+  });
+});

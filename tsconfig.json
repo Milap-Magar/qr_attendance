@@ -26,5 +26,7 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false
-  }
+  },
+  // the frontend has its own tsconfig (frontend/tsconfig.json)
+  "exclude": ["node_modules", "frontend"]
 }

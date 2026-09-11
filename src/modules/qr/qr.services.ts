@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "../../db";
 import { attendanceRecords, credentials, users } from "../../db/schema";
 import { AppError } from "../../common/errors";
@@ -16,24 +16,27 @@ const credentialColumns = {
   revokedAt: credentials.revokedAt,
 };
 
+// ids of everyone in one school — to scope credential queries (credentials belong to a school through their user)
+const usersOf = (orgId: string) => db.select({ id: users.id }).from(users).where(eq(users.organizationId, orgId));
+
 export const qrServices = {
-  // Issue a QR card for a student.
-  // Returns the plain `token` ONCE — the frontend turns it into a QR image for printing.
-  // We only keep its hash, so if the card is lost the answer is "issue a new one", not "look it up".
-  async issueCredential(userId: string) {
-    await userServices.getUserById(userId); // throws 404 if the student doesn't exist
+  // Issue a QR credential for a student: a printed `card` (admin) or a `device` (the student's own phone).
+  // Returns the plain `token` ONCE — the frontend turns it into a QR image (printed, or shown on the phone).
+  // We only keep its hash, so if it's lost the answer is "issue a new one", not "look it up".
+  async issueCredential(userId: string, orgId: string, method: "card" | "device" = "card") {
+    await userServices.getUserInOrg(userId, orgId); // 404 if the student doesn't exist or is in another school
 
     const token = generateToken();
 
-    // one active card per student: revoke the old card(s) and create the new one.
-    // transaction = both happen, or neither does.
+    // one active credential PER METHOD: a new phone replaces the old phone, but leaves the printed card alone.
+    // transaction = revoke + create both happen, or neither does.
     const credential = await db.transaction(async (tx) => {
       await tx.update(credentials)
         .set({ revokedAt: new Date() })
-        .where(and(eq(credentials.userId, userId), isNull(credentials.revokedAt)));
+        .where(and(eq(credentials.userId, userId), eq(credentials.method, method), isNull(credentials.revokedAt)));
 
       const [created] = await tx.insert(credentials)
-        .values({ userId, tokenHash: hashToken(token), method: "card" })
+        .values({ userId, tokenHash: hashToken(token), method })
         .returning(credentialColumns);
       return created!;
     });
@@ -41,22 +44,23 @@ export const qrServices = {
     return { ...credential, token };
   },
 
-  async listCredentials(userId?: string) {
+  async listCredentials(orgId: string, userId?: string) {
     return await db.select(credentialColumns)
       .from(credentials)
-      .where(userId ? eq(credentials.userId, userId) : undefined)
+      .where(and(inArray(credentials.userId, usersOf(orgId)), userId ? eq(credentials.userId, userId) : undefined))
       .orderBy(desc(credentials.createdAt));
   },
 
   // lost/stolen card → revoke it. Revoking twice is fine (returns the same row).
-  async revokeCredential(id: string) {
+  async revokeCredential(id: string, orgId: string) {
+    const mine = and(eq(credentials.id, id), inArray(credentials.userId, usersOf(orgId)));
     const [revoked] = await db.update(credentials)
       .set({ revokedAt: new Date() })
-      .where(and(eq(credentials.id, id), isNull(credentials.revokedAt)))
+      .where(and(mine, isNull(credentials.revokedAt)))
       .returning(credentialColumns);
     if (revoked) return revoked;
 
-    const [existing] = await db.select(credentialColumns).from(credentials).where(eq(credentials.id, id));
+    const [existing] = await db.select(credentialColumns).from(credentials).where(mine);
     if (!existing) {
       throw new AppError(404, "Credential not found", "CREDENTIAL_NOT_FOUND");
     }
@@ -65,9 +69,9 @@ export const qrServices = {
 
   // THE SCAN. The scanner only decodes the image and sends the text;
   // every check happens here, using the SERVER's clock (a laptop clock can be wrong or faked).
-  async scan({ sessionId, token }: ScanInput, scannedBy: string) {
-    // 1. is the session open right now?
-    const session = await attendanceServices.getSession(sessionId); // 404 if missing
+  async scan({ sessionId, token }: ScanInput, scannedBy: string, orgId: string) {
+    // 1. is the session open right now? (and is it one of MY school's sessions?)
+    const session = await attendanceServices.getSession(sessionId, orgId); // 404 if missing / other school
     const status = sessionStatus(session);
     if (status === "upcoming") {
       throw new AppError(409, "This session has not started yet", "SESSION_NOT_OPEN");
@@ -85,7 +89,8 @@ export const qrServices = {
       })
       .from(credentials)
       .innerJoin(users, eq(users.id, credentials.userId))
-      .where(eq(credentials.tokenHash, hashToken(token)));
+      // a card from ANOTHER school is simply unknown here: same 404, nothing about that school leaks
+      .where(and(eq(credentials.tokenHash, hashToken(token)), eq(users.organizationId, orgId)));
 
     if (!card) {
       throw new AppError(404, "Unknown QR code", "QR_NOT_FOUND");

@@ -2,6 +2,12 @@
 
 **Written:** 2026-09-11 · Companion to `NEXT_STEPS.md` §2
 
+> **Update (multi-school / Hajir):** the role → permission map below is from the single-school version.
+> The current policy is `src/modules/rbac/rbac.constants.ts`: `admin` is now a *school's* administrator
+> (incl. `users:create` and `organization:manage`), and `system` is the platform operator with **no school**
+> (only `platform:manage`). Permissions answer *what* you may do; *where* is always your own school, via
+> `orgIdOf(request)` in `auth.middleware.ts`. See the Roles section of `API.md`.
+
 ---
 
 ## TL;DR — do I need `rbac.controller.ts`?

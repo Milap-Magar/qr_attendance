@@ -11,6 +11,7 @@ import { authRoutes } from "./modules/auth/auth.routes";
 import { userRoutes } from "./modules/users/user.routes";
 import { qrRoutes } from "./modules/qr/qr.routes";
 import { attendanceRoutes } from "./modules/attendance/attendance.routes";
+import { organizationRoutes } from "./modules/organizations/organization.routes";
 
 export async function buildApp(options: FastifyServerOptions = { logger: true }) {
   const fastify = Fastify(options);
@@ -75,6 +76,7 @@ export async function buildApp(options: FastifyServerOptions = { logger: true })
   await fastify.register(userRoutes, { prefix: "/api/users" });
   await fastify.register(qrRoutes, { prefix: "/api/qr" });
   await fastify.register(attendanceRoutes, { prefix: "/api/attendance" });
+  await fastify.register(organizationRoutes, { prefix: "/api/organizations" });
 
   return fastify;
 }

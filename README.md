@@ -1,9 +1,14 @@
-# QR Attendance — backend
+# Hajir — backend
 
-Fastify + Drizzle (Postgres) + Bun. Students carry a QR card, a teacher's laptop scans it, the server records attendance.
+**Hajir** (हाजिर, "present!") is multi-school QR attendance, run as a SaaS. A school or college signs up, students
+join it with a join code and carry a QR (printed card or phone), a teacher's laptop scans it, the server records attendance.
+Every school's data is kept apart: each query is scoped to the caller's organization.
+
+Fastify + Drizzle (Postgres) + Bun.
 
 - **API reference for the frontend:** [`API.md`](./API.md)
 - **How RBAC works:** [`RBAC_FLOW.md`](./RBAC_FLOW.md)
+- **Frontend (React Router v7 + shadcn/ui):** [`frontend/`](./frontend/README.md). Run `bun run dev` here, then `cd frontend && bun run dev`
 
 ## Setup (once)
 
@@ -11,10 +16,20 @@ Fastify + Drizzle (Postgres) + Bun. Students carry a QR card, a teacher's laptop
 bun install
 cp .env.example .env            # then edit DATABASE_URL and JWT_SECRET
 bun run db:migrate              # create the tables
-bun run create-user --name "Admin" --email admin@school.com --password 'Admin@123' --role admin
 ```
 
-The public `/register` endpoint only creates students. Use `create-user` to make your first admin/teacher.
+Then open the frontend and click **Start free** (`/signup`) to create a school. You become its admin, and the
+**School** page shows the join code your students sign up with.
+
+Optional, the platform operator (you, above all schools; sees every school on the **Schools** page):
+
+```bash
+bun run create-user --role system --name "Platform Owner" --email you@hajir.app --password 'Admin@123'
+```
+
+> **Upgrading from the single-school version:** migration `0003_organizations` moves all existing users and
+> sessions into one school called "My School" (rename it on the School page). Existing `system` accounts
+> become platform operators with no school. Log in with an `admin` account to manage the school.
 
 ## Commands
 
@@ -27,7 +42,8 @@ The public `/register` endpoint only creates students. Use `create-user` to make
 | `bun run db:generate` | after editing `src/db/schema.ts` → writes a new SQL migration into `drizzle/` |
 | `bun run db:migrate` | apply migrations (the server also does this on startup) |
 | `bun run db:studio` | browse the database in the browser |
-| `bun run create-user --name .. --email .. --password .. [--role admin\|teachers\|users\|system]` | create any user from the terminal |
+| `bun run create-user --name .. --email .. --password .. --role system` | create a platform operator |
+| `bun run create-user --school <JOINCODE> --name .. --email .. --password .. [--role admin\|teachers\|users]` | add someone to a school from the terminal |
 
 ## Tests
 
@@ -41,7 +57,9 @@ bun run test
 ```
 
 `bun test` loads `.env.test` automatically and refuses to run if the database name doesn't contain `test`.
-Tests use `app.inject()` (fake HTTP requests, no port). See `tests/helpers.ts` → `loginAs(app, "admin")`.
+Tests use `app.inject()` (fake HTTP requests, no port). See `tests/helpers.ts` → `loginAs(app, "admin")`
+(everyone lands in one default test school; pass `{ orgId }` for another). `tests/organizations.test.ts` checks
+that two schools can't see or touch each other's data.
 
 ## Folder layout
 
@@ -56,6 +74,7 @@ src/modules/<name>/
    *.services.ts          logic + database
    *.types.ts             zod schemas (input validation) + TS types
 src/modules/rbac/         who can do what (rbac.constants.ts is the policy)
+src/modules/organizations/ schools (tenants): join codes, school settings, platform list
 scripts/create-user.ts    CLI for creating users
 tests/                    bun test
 ```

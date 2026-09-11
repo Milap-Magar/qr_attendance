@@ -26,12 +26,13 @@ describe("RBAC: 401 → 403 → 200", () => {
     expect(ok.json().every((u: { role: string }) => u.role === "users")).toBe(true);
   });
 
-  test("only system can create users (with a role)", async () => {
+  test("school admins create users (with a role) in their own school; others cannot", async () => {
     const payload = { name: "New Teacher", email: "teacher@test.com", password: PASSWORD, role: "teachers" };
-    expect((await app.inject({ method: "POST", url: "/api/users", headers: admin.auth, payload })).statusCode).toBe(403);
-    const res = await app.inject({ method: "POST", url: "/api/users", headers: system.auth, payload });
+    expect((await app.inject({ method: "POST", url: "/api/users", headers: student.auth, payload })).statusCode).toBe(403);
+    expect((await app.inject({ method: "POST", url: "/api/users", headers: system.auth, payload })).statusCode).toBe(403);
+    const res = await app.inject({ method: "POST", url: "/api/users", headers: admin.auth, payload });
     expect(res.statusCode).toBe(201);
-    expect(res.json()).toMatchObject({ role: "teachers" });
+    expect(res.json()).toMatchObject({ role: "teachers", organizationId: admin.user.organizationId });
     expect(res.json().password).toBeUndefined();
 
     // and the created user can log in (password was hashed, not stored raw)

@@ -1,12 +1,29 @@
-import { boolean, uuid, varchar, pgTable, text, timestamp, pgEnum, unique } from 'drizzle-orm/pg-core';
-import {roleEnum as ROLE_VALUES } from "../common/types/common.types"
+import { sql } from 'drizzle-orm';
+import { boolean, uuid, varchar, pgTable, text, timestamp, pgEnum, unique, index, check } from 'drizzle-orm/pg-core';
+import { roleEnum as ROLE_VALUES, organizationTypeEnum as ORGANIZATION_TYPES } from "../common/types/common.types"
 //for enum values we use the following:
 export const genderEnum = pgEnum('gender', ['male', 'female', 'other']);
 export const roleEnum = pgEnum('role', ROLE_VALUES);
 export const methodEnum = pgEnum('method', ['device', 'card']);
+export const organizationTypeEnum = pgEnum('organization_type', ORGANIZATION_TYPES);
 
 // every timestamp stores the timezone, so time-window checks are never off by hours
 const timestamptz = (name: string) => timestamp(name, { withTimezone: true });
+
+// ------------
+// Organizations (tenants)
+//-------------
+// One row per school / college using the app. Almost every other row belongs to one,
+// and every query is scoped to the caller's organization, so schools never see each other's data.
+export const organizations = pgTable('organizations', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    name: text('name').notNull(),
+    type: organizationTypeEnum('type').notNull().default('school'),
+    // students type this (or open the join link) to sign up INTO this school. Admins can regenerate it.
+    joinCode: varchar('join_code', { length: 16 }).notNull().unique(),
+    createdAt: timestamptz('created_at').notNull().defaultNow(),
+    updatedAt: timestamptz('updated_at').notNull().defaultNow().$onUpdate(() => new Date()),
+});
 
 // ------------
 // User Schema
@@ -14,6 +31,8 @@ const timestamptz = (name: string) => timestamp(name, { withTimezone: true });
 
 export const users = pgTable('users', {
     id: uuid('id').defaultRandom().primaryKey(),
+    // which school this person belongs to. NULL only for `system` (the platform operator, above all schools).
+    organizationId: uuid('organization_id').references(() => organizations.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
     // varchar is used for fixed length of characters
     email: varchar('email', {length: 255}).notNull().unique(),
@@ -25,7 +44,11 @@ export const users = pgTable('users', {
     is_active: boolean('is_Active').notNull().default(false),
     createdAt: timestamptz("created_at").notNull().defaultNow(),
     updatedAt: timestamptz('updated_at').notNull().defaultNow().$onUpdate(() => new Date()),
-});
+}, (table) => [
+    index('users_organization_id_idx').on(table.organizationId),
+    // the DB guarantees it: system users have no school, everyone else has exactly one
+    check('users_organization_matches_role', sql`(${table.role} = 'system') = (${table.organizationId} is null)`),
+]);
 
 // ------------
 // Refresh Tokens
@@ -64,12 +87,15 @@ export const credentials = pgTable("credentials",{
 // "Closing" a session early just sets closesAt = now().
 export const attendanceSessions = pgTable('attendance_sessions',{
   id: uuid('id').defaultRandom().primaryKey(),
+  organizationId: uuid('organization_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
   title: text('title').notNull(),
   openedBy: uuid('opened_by').notNull().references(()=> users.id),
   opensAt: timestamptz('opens_at').notNull().defaultNow(),
   closesAt: timestamptz('closes_at').notNull(),
   createdAt: timestamptz('created_at').notNull().defaultNow(),
-});
+}, (table) => [
+  index('attendance_sessions_organization_id_idx').on(table.organizationId),
+]);
 
 // ------------
 // Attendance - Records

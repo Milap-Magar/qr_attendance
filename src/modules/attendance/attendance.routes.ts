@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync } from "fastify";
-import { authMiddleware } from "../auth/auth.middleware";
+import { authMiddleware, orgIdOf } from "../auth/auth.middleware";
 import { requirePermission } from "../rbac/rbac.middleware";
 import { idParamSchema } from "../../common/types/common.types";
 import { attendanceServices } from "./attendance.services";
@@ -12,15 +12,15 @@ export const attendanceRoutes: FastifyPluginAsync = async (fastify) => {
     preHandler: [authMiddleware, requirePermission("sessions:manage")],
   }, async (request, reply) => {
     const body = createSessionSchema.parse(request.body);
-    const session = await attendanceServices.createSession(body, request.user.userId);
+    const session = await attendanceServices.createSession(body, request.user.userId, orgIdOf(request));
     return reply.status(201).send(session);
   });
 
-  // GET /api/attendance/sessions — all sessions, newest first, with status + checkedInCount
+  // GET /api/attendance/sessions — my school's sessions, newest first, with status + checkedInCount
   fastify.get("/sessions", {
     preHandler: [authMiddleware, requirePermission("sessions:manage")],
-  }, async (_request, reply) => {
-    return reply.send(await attendanceServices.listSessions());
+  }, async (request, reply) => {
+    return reply.send(await attendanceServices.listSessions(orgIdOf(request)));
   });
 
   // GET /api/attendance/sessions/:id
@@ -28,7 +28,7 @@ export const attendanceRoutes: FastifyPluginAsync = async (fastify) => {
     preHandler: [authMiddleware, requirePermission("sessions:manage")],
   }, async (request, reply) => {
     const { id } = idParamSchema.parse(request.params);
-    return reply.send(await attendanceServices.getSession(id));
+    return reply.send(await attendanceServices.getSession(id, orgIdOf(request)));
   });
 
   // PATCH /api/attendance/sessions/:id/close — stop accepting scans now
@@ -36,7 +36,7 @@ export const attendanceRoutes: FastifyPluginAsync = async (fastify) => {
     preHandler: [authMiddleware, requirePermission("sessions:manage")],
   }, async (request, reply) => {
     const { id } = idParamSchema.parse(request.params);
-    return reply.send(await attendanceServices.closeSession(id));
+    return reply.send(await attendanceServices.closeSession(id, orgIdOf(request)));
   });
 
   // GET /api/attendance/sessions/:id/records — who checked in (admin only by default)
@@ -44,7 +44,7 @@ export const attendanceRoutes: FastifyPluginAsync = async (fastify) => {
     preHandler: [authMiddleware, requirePermission("reports:read")],
   }, async (request, reply) => {
     const { id } = idParamSchema.parse(request.params);
-    return reply.send(await attendanceServices.getSessionRecords(id));
+    return reply.send(await attendanceServices.getSessionRecords(id, orgIdOf(request)));
   });
 
   // GET /api/attendance/me — the logged-in student's own history
