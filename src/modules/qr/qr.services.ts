@@ -1,59 +1,79 @@
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "../../db";
-import { attendanceRecords, credentials, users } from "../../db/schema";
+import { attendanceRecords, classes, credentials, students } from "../../db/schema";
 import { AppError } from "../../common/errors";
-import { generateToken, hashToken } from "../../common/crypto";
-import { userServices } from "../users/user.service";
+import { hashToken } from "../../common/crypto";
+import { schoolDay } from "../../common/school-day";
+import { classLabel, classServices } from "../classes/class.services";
+import { studentServices } from "../students/student.services";
+import { organizationServices } from "../organizations/organization.services";
 import { attendanceServices, sessionStatus } from "../attendance/attendance.services";
+import { credentialColumns, issueCardFor } from "./credential.core";
 import type { ScanInput } from "./qr.types";
 
-// safe columns — token_hash is never sent to anyone
-const credentialColumns = {
-  id: credentials.id,
-  userId: credentials.userId,
-  method: credentials.method,
-  createdAt: credentials.createdAt,
-  revokedAt: credentials.revokedAt,
-};
-
-// ids of everyone in one school — to scope credential queries (credentials belong to a school through their user)
-const usersOf = (orgId: string) => db.select({ id: users.id }).from(users).where(eq(users.organizationId, orgId));
+// ids of everyone in one school — to scope credential queries
+// (a credential belongs to a school through its student)
+const studentsOf = (orgId: string) =>
+  db.select({ id: students.id }).from(students).where(eq(students.organizationId, orgId));
 
 export const qrServices = {
-  // Issue a QR credential for a student: a printed `card` (admin) or a `device` (the student's own phone).
-  // Returns the plain `token` ONCE — the frontend turns it into a QR image (printed, or shown on the phone).
-  // We only keep its hash, so if it's lost the answer is "issue a new one", not "look it up".
-  async issueCredential(userId: string, orgId: string, method: "card" | "device" = "card") {
-    await userServices.getUserInOrg(userId, orgId); // 404 if the student doesn't exist or is in another school
-
-    const token = generateToken();
-
-    // one active credential PER METHOD: a new phone replaces the old phone, but leaves the printed card alone.
-    // transaction = revoke + create both happen, or neither does.
-    const credential = await db.transaction(async (tx) => {
-      await tx.update(credentials)
-        .set({ revokedAt: new Date() })
-        .where(and(eq(credentials.userId, userId), eq(credentials.method, method), isNull(credentials.revokedAt)));
-
-      const [created] = await tx.insert(credentials)
-        .values({ userId, tokenHash: hashToken(token), method })
-        .returning(credentialColumns);
-      return created!;
-    });
-
-    return { ...credential, token };
+  // Re-issue ONE student's card: lost, damaged, or never printed.
+  // The old card stops working the instant this returns, so only do it when the old one is gone.
+  // Returns the plain `token` once — it cannot be looked up afterwards.
+  async issueCredential(studentId: string, orgId: string) {
+    await studentServices.getById(studentId, orgId); // 404 if the student is missing / another school's
+    return await issueCardFor(studentId);
   },
 
-  async listCredentials(orgId: string, userId?: string) {
+  // Issue cards for a whole class in one go — the "we just added Grade 10 A, print their cards" flow.
+  //
+  // `only: "missing"` (the default) skips students who already hold a working card, so running this
+  // twice doesn't invalidate cards that are already in students' hands. `only: "all"` reprints the
+  // entire class and revokes every existing card — only for a fresh batch of physical cards.
+  async issueClassCards(classId: string, orgId: string, only: "missing" | "all" = "missing") {
+    const group = await classServices.getById(classId, orgId); // 404 if missing / other school
+    const roster = await studentServices.list(orgId, { classId, includeInactive: false });
+
+    const targets = only === "all" ? roster : roster.filter((student) => !student.hasActiveCard);
+
+    // One transaction: either the whole class gets printable cards or nothing changes, so there is
+    // never a half-printed batch to reconcile by hand.
+    //
+    // Sequential, not Promise.all: a transaction is a single connection, and firing its writes
+    // concurrently leaves their order up to the driver. A class is at most a few dozen students.
+    const cards = await db.transaction(async (tx) => {
+      const issued = [];
+      for (const student of targets) {
+        issued.push({
+          student: { id: student.id, name: student.name, rollNo: student.rollNo },
+          card: await issueCardFor(student.id, tx),
+        });
+      }
+      return issued;
+    });
+
+    return {
+      class: { id: group.id, label: group.label, academicYear: group.academicYear },
+      issued: cards.length,
+      skipped: roster.length - targets.length, // already held a working card
+      cards,
+    };
+  },
+
+  // card history for the school, newest first (never includes the token)
+  async listCredentials(orgId: string, studentId?: string) {
     return await db.select(credentialColumns)
       .from(credentials)
-      .where(and(inArray(credentials.userId, usersOf(orgId)), userId ? eq(credentials.userId, userId) : undefined))
+      .where(and(
+        inArray(credentials.studentId, studentsOf(orgId)),
+        studentId ? eq(credentials.studentId, studentId) : undefined,
+      ))
       .orderBy(desc(credentials.createdAt));
   },
 
   // lost/stolen card → revoke it. Revoking twice is fine (returns the same row).
   async revokeCredential(id: string, orgId: string) {
-    const mine = and(eq(credentials.id, id), inArray(credentials.userId, usersOf(orgId)));
+    const mine = and(eq(credentials.id, id), inArray(credentials.studentId, studentsOf(orgId)));
     const [revoked] = await db.update(credentials)
       .set({ revokedAt: new Date() })
       .where(and(mine, isNull(credentials.revokedAt)))
@@ -68,7 +88,11 @@ export const qrServices = {
   },
 
   // THE SCAN. The scanner only decodes the image and sends the text;
-  // every check happens here, using the SERVER's clock (a laptop clock can be wrong or faked).
+  // every check happens here, using the SERVER's clock and the SCHOOL's timezone
+  // (a laptop clock can be wrong or deliberately set back).
+  //
+  // Attendance is per DAY: the first scan into any open session marks the student present for
+  // today, and every later scan that day is reported back as "already present", not an error to fix.
   async scan({ sessionId, token }: ScanInput, scannedBy: string, orgId: string) {
     // 1. is the session open right now? (and is it one of MY school's sessions?)
     const session = await attendanceServices.getSession(sessionId, orgId); // 404 if missing / other school
@@ -85,12 +109,19 @@ export const qrServices = {
       .select({
         credentialId: credentials.id,
         revokedAt: credentials.revokedAt,
-        student: { id: users.id, name: users.name, email: users.email },
+        student: {
+          id: students.id,
+          name: students.name,
+          rollNo: students.rollNo,
+          isActive: students.isActive,
+        },
+        class: { id: classes.id, grade: classes.grade, section: classes.section },
       })
       .from(credentials)
-      .innerJoin(users, eq(users.id, credentials.userId))
+      .innerJoin(students, eq(students.id, credentials.studentId))
+      .innerJoin(classes, eq(classes.id, students.classId))
       // a card from ANOTHER school is simply unknown here: same 404, nothing about that school leaks
-      .where(and(eq(credentials.tokenHash, hashToken(token)), eq(users.organizationId, orgId)));
+      .where(and(eq(credentials.tokenHash, hashToken(token)), eq(students.organizationId, orgId)));
 
     if (!card) {
       throw new AppError(404, "Unknown QR code", "QR_NOT_FOUND");
@@ -99,21 +130,49 @@ export const qrServices = {
     if (card.revokedAt) {
       throw new AppError(403, "This QR card has been revoked", "QR_REVOKED");
     }
+    if (!card.student.isActive) {
+      throw new AppError(403, `${card.student.name} is no longer enrolled`, "STUDENT_INACTIVE");
+    }
 
-    // 3. record it. The unique (session_id, user_id) constraint makes a second scan
-    //    insert nothing, instead of creating a duplicate row.
+    // 3. today, as the SCHOOL reckons it
+    const timezone = await organizationServices.timezoneOf(orgId);
+    const attendanceDate = schoolDay(timezone);
+
+    const student = {
+      ...card.student,
+      class: { ...card.class, label: classLabel(card.class) },
+    };
+
+    // 4. mark present. The unique (student_id, attendance_date) constraint makes a second scan
+    //    the same day insert nothing, instead of creating a duplicate row — even if it lands in
+    //    a different session, and even if two scanners fire at the same millisecond.
     const [record] = await db.insert(attendanceRecords)
-      .values({ sessionId, userId: card.student.id, credentialId: card.credentialId, scannedBy })
-      .onConflictDoNothing({ target: [attendanceRecords.sessionId, attendanceRecords.userId] })
-      .returning({ id: attendanceRecords.id, scannedAt: attendanceRecords.scannedAt });
+      .values({ sessionId, studentId: student.id, credentialId: card.credentialId, scannedBy, attendanceDate })
+      .onConflictDoNothing({ target: [attendanceRecords.studentId, attendanceRecords.attendanceDate] })
+      .returning({ id: attendanceRecords.id, scannedAt: attendanceRecords.scannedAt, attendanceDate: attendanceRecords.attendanceDate });
 
     if (!record) {
-      throw new AppError(409, `${card.student.name} is already checked in`, "ALREADY_SCANNED");
+      // Not a failure: the student IS present, someone already scanned them. Tell the operator
+      // what time, so they can wave the queue along instead of trying the card again.
+      const [already] = await db
+        .select({ scannedAt: attendanceRecords.scannedAt })
+        .from(attendanceRecords)
+        .where(and(eq(attendanceRecords.studentId, student.id), eq(attendanceRecords.attendanceDate, attendanceDate)));
+
+      const at = already && new Intl.DateTimeFormat("en-GB", {
+        timeZone: timezone, hour: "2-digit", minute: "2-digit",
+      }).format(already.scannedAt);
+
+      throw new AppError(
+        409,
+        at ? `${student.name} was already marked present at ${at}` : `${student.name} is already marked present today`,
+        "ALREADY_PRESENT",
+      );
     }
 
     return {
-      message: "Checked in",
-      student: card.student,
+      message: "Marked present",
+      student,
       session: { id: session.id, title: session.title },
       record,
     };

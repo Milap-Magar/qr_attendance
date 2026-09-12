@@ -1,6 +1,6 @@
-import { count, desc, eq, sql } from "drizzle-orm";
+import { count, desc, eq, ne, sql } from "drizzle-orm";
 import { db } from "../../db";
-import { attendanceSessions, organizations, users } from "../../db/schema";
+import { attendanceSessions, organizations, students, users } from "../../db/schema";
 import { AppError } from "../../common/errors";
 import { generateJoinCode } from "../../common/crypto";
 import type { OrganizationType } from "../../common/types/common.types";
@@ -13,6 +13,7 @@ export const organizationColumns = {
   name: organizations.name,
   type: organizations.type,
   joinCode: organizations.joinCode,
+  timezone: organizations.timezone,
   createdAt: organizations.createdAt,
 };
 
@@ -39,6 +40,13 @@ export const organizationServices = {
       throw new AppError(404, "School not found", "ORGANIZATION_NOT_FOUND");
     }
     return organization;
+  },
+
+  // Which timezone decides this school's "today". Read on every scan, so it selects one column
+  // rather than the whole row. Falls back to UTC only if the school vanished mid-request.
+  async timezoneOf(id: string) {
+    const [found] = await db.select({ timezone: organizations.timezone }).from(organizations).where(eq(organizations.id, id));
+    return found?.timezone ?? "UTC";
   },
 
   // for the sign-up page: "you're joining Sunrise Academy". Never returns the id or anything private.
@@ -73,15 +81,21 @@ export const organizationServices = {
 
   // platform overview: every school with its head counts, newest first
   async listAll() {
-    const memberCounts = db
-      .select({
-        organizationId: users.organizationId,
-        students: sql<number>`count(*) filter (where ${users.role} = 'users')`.mapWith(Number).as("students"),
-        staff: sql<number>`count(*) filter (where ${users.role} <> 'users')`.mapWith(Number).as("staff"),
-      })
+    // Students are roster rows, staff are accounts — two different tables, so two subqueries.
+    // (`users` still has a legacy `users` role from when students were accounts; those are not
+    // staff and must not be counted as such.)
+    const studentCounts = db
+      .select({ organizationId: students.organizationId, students: count().as("students") })
+      .from(students)
+      .groupBy(students.organizationId)
+      .as("student_counts");
+
+    const staffCounts = db
+      .select({ organizationId: users.organizationId, staff: count().as("staff") })
       .from(users)
+      .where(ne(users.role, "users"))
       .groupBy(users.organizationId)
-      .as("member_counts");
+      .as("staff_counts");
 
     const sessionCounts = db
       .select({ organizationId: attendanceSessions.organizationId, sessions: count().as("sessions") })
@@ -92,12 +106,13 @@ export const organizationServices = {
     return await db
       .select({
         ...organizationColumns,
-        students: sql<number>`coalesce(${memberCounts.students}, 0)`.mapWith(Number),
-        staff: sql<number>`coalesce(${memberCounts.staff}, 0)`.mapWith(Number),
+        students: sql<number>`coalesce(${studentCounts.students}, 0)`.mapWith(Number),
+        staff: sql<number>`coalesce(${staffCounts.staff}, 0)`.mapWith(Number),
         sessions: sql<number>`coalesce(${sessionCounts.sessions}, 0)`.mapWith(Number),
       })
       .from(organizations)
-      .leftJoin(memberCounts, eq(memberCounts.organizationId, organizations.id))
+      .leftJoin(studentCounts, eq(studentCounts.organizationId, organizations.id))
+      .leftJoin(staffCounts, eq(staffCounts.organizationId, organizations.id))
       .leftJoin(sessionCounts, eq(sessionCounts.organizationId, organizations.id))
       .orderBy(desc(organizations.createdAt));
   },

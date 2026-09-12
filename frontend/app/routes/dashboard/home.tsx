@@ -1,15 +1,16 @@
 import { Link, redirect } from "react-router";
-import { ArrowRightIcon, CalendarCheckIcon, CalendarClockIcon, ClipboardCheckIcon, QrCodeIcon, RadioIcon, ScanLineIcon, UsersIcon } from "lucide-react";
+import { ArrowRightIcon, CheckCircle2Icon, LayersIcon, PercentIcon, RadioIcon, ScanLineIcon, UsersIcon } from "lucide-react";
 
 import type { Route } from "./+types/home";
 import { EmptyState, PageHeader, StatCard, StatusBadge } from "~/components/shared";
+import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "~/components/ui/table";
 import { api } from "~/lib/api";
 import { can, requireUser } from "~/lib/auth";
-import { formatDate, formatDateTime, formatTime } from "~/lib/format";
-import type { AttendanceSession, MyAttendance, User } from "~/lib/types";
+import { formatDate, formatDateTime, formatDay, formatTime } from "~/lib/format";
+import type { AttendanceSession, DailySummary } from "~/lib/types";
 
 export const handle = { title: "Overview" };
 
@@ -17,12 +18,11 @@ export const handle = { title: "Overview" };
 export async function clientLoader() {
   const me = await requireUser();
   if (can(me, "platform:manage")) throw redirect("/schools"); // the platform operator has no school to show
-  const [sessions, students, myAttendance] = await Promise.all([
+  const [sessions, summary] = await Promise.all([
     can(me, "sessions:manage") ? api<AttendanceSession[]>("/api/attendance/sessions") : null,
-    can(me, "users:read") ? api<User[]>("/api/users?role=users") : null,
-    me.role === "users" ? api<MyAttendance[]>("/api/attendance/me") : null,
+    can(me, "reports:read") ? api<DailySummary>("/api/attendance/summary") : null,
   ]);
-  return { me, sessions, studentCount: students?.length, myAttendance };
+  return { me, sessions, summary, canScan: can(me, "attendance:scan") };
 }
 
 function greeting() {
@@ -31,172 +31,164 @@ function greeting() {
 }
 
 export default function Home({ loaderData }: Route.ComponentProps) {
-  const { me, sessions, studentCount, myAttendance } = loaderData;
+  const { me, sessions, summary, canScan } = loaderData;
   const firstName = me.name.split(" ")[0];
+  const open = sessions?.filter((s) => s.status === "open") ?? [];
+  const rate = summary && summary.total > 0 ? Math.round((summary.present / summary.total) * 100) : 0;
 
   return (
     <>
-      <PageHeader title={`${greeting()}, ${firstName}`} description={formatDate(new Date().toISOString())}>
-        {can(me, "qr:self") && (
+      <PageHeader title={`${greeting()}, ${firstName}`} description={summary ? formatDay(summary.date) : formatDate(new Date().toISOString())}>
+        {canScan && open.length > 0 && (
           <Button asChild size="lg">
-            <Link to="/my-qr">
-              <QrCodeIcon /> Show my QR
+            <Link to={`/scan?session=${open[0]!.id}`}>
+              <ScanLineIcon /> Open the scanner
             </Link>
           </Button>
         )}
       </PageHeader>
-      {sessions ? (
-        <StaffOverview sessions={sessions} studentCount={studentCount} canScan={can(me, "attendance:scan")} />
-      ) : (
-        <StudentOverview attendance={myAttendance ?? []} />
+
+      {/* a legacy student account: nothing here is for them any more */}
+      {!sessions && !summary && (
+        <EmptyState icon={UsersIcon} title="Nothing to show" description="This account has no access to attendance. Ask your school's admin about it." />
       )}
-    </>
-  );
-}
 
-function StaffOverview({ sessions, studentCount, canScan }: { sessions: AttendanceSession[]; studentCount?: number; canScan: boolean }) {
-  const open = sessions.filter((s) => s.status === "open");
-  const today = new Date().toDateString();
-  const checkedInToday = sessions
-    .filter((s) => new Date(s.opensAt).toDateString() === today)
-    .reduce((sum, s) => sum + s.checkedInCount, 0);
+      <div className="grid gap-6">
+        {summary && (
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <StatCard label="Present today" value={summary.present} hint={`of ${summary.total} on the rolls`} icon={CheckCircle2Icon} />
+            <StatCard label="Attendance" value={`${rate}%`} hint="whole school" icon={PercentIcon} />
+            <StatCard label="Open now" value={open.length} hint="accepting scans" icon={RadioIcon} />
+            <StatCard label="Classes" value={summary.classes.length} hint="this school" icon={LayersIcon} />
+          </div>
+        )}
 
-  return (
-    <div className="grid gap-6">
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Open now" value={open.length} hint="accepting scans" icon={RadioIcon} />
-        <StatCard label="Checked in today" value={checkedInToday} hint="across today's sessions" icon={CalendarCheckIcon} />
-        <StatCard label="Students" value={studentCount ?? "–"} hint="registered" icon={UsersIcon} />
-        <StatCard label="Sessions" value={sessions.length} hint="all time" icon={CalendarClockIcon} />
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-5">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Open sessions</CardTitle>
-            <CardDescription>Start scanning cards for a live session</CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-3">
-            {open.length === 0 ? (
-              <EmptyState icon={RadioIcon} title="Nothing open right now" description="Open a session to start taking attendance.">
-                <Button asChild size="sm">
-                  <Link to="/sessions">Go to sessions</Link>
-                </Button>
-              </EmptyState>
-            ) : (
-              open.map((s) => (
-                <div key={s.id} className="flex items-center justify-between gap-3 rounded-lg border p-3">
-                  <div className="min-w-0">
-                    <p className="truncate font-medium">{s.title}</p>
-                    <p className="text-xs text-muted-foreground">
-                      until {formatTime(s.closesAt)} · {s.checkedInCount} checked in
-                    </p>
-                  </div>
-                  {canScan && (
+        <div className="grid gap-6 lg:grid-cols-5">
+          {summary && (
+            <Card className="gap-0 pb-0 lg:col-span-3">
+              <CardHeader className="pb-6">
+                <CardTitle>Today by class</CardTitle>
+                <CardDescription>Open a class to see exactly who is missing</CardDescription>
+                <CardAction>
+                  <Button asChild variant="ghost" size="sm">
+                    <Link to="/register">
+                      Register <ArrowRightIcon />
+                    </Link>
+                  </Button>
+                </CardAction>
+              </CardHeader>
+              <CardContent className="px-0">
+                {summary.classes.length === 0 ? (
+                  <EmptyState icon={LayersIcon} title="No classes yet" description="Create a class, add its students, and today's tally shows up here.">
                     <Button asChild size="sm">
-                      <Link to={`/scan?session=${s.id}`}>
-                        <ScanLineIcon /> Scan
+                      <Link to="/classes">Go to classes</Link>
+                    </Button>
+                  </EmptyState>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="pl-6">Class</TableHead>
+                        <TableHead className="text-right">Present</TableHead>
+                        <TableHead className="text-right">Absent</TableHead>
+                        <TableHead className="pr-6 text-right">On roll</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {summary.classes.map((row) => (
+                        <TableRow key={row.id}>
+                          <TableCell className="pl-6 font-medium">
+                            <Link to={`/register?classId=${row.id}`} className="hover:underline">
+                              {row.label}
+                            </Link>
+                            <Badge variant="outline" className="ml-2">
+                              {row.academicYear}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">{row.present}</TableCell>
+                          <TableCell className="text-right tabular-nums text-muted-foreground">{row.absent}</TableCell>
+                          <TableCell className="pr-6 text-right tabular-nums">{row.total}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {sessions && (
+            <div className="grid content-start gap-6 lg:col-span-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Open sessions</CardTitle>
+                  <CardDescription>Scans only count while one is open</CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-3">
+                  {open.length === 0 ? (
+                    <EmptyState icon={RadioIcon} title="Nothing open" description="Open a session to start taking attendance.">
+                      <Button asChild size="sm">
+                        <Link to="/sessions">Go to sessions</Link>
+                      </Button>
+                    </EmptyState>
+                  ) : (
+                    open.map((s) => (
+                      <div key={s.id} className="flex items-center justify-between gap-3 rounded-lg border p-3">
+                        <div className="min-w-0">
+                          <p className="truncate font-medium">{s.title}</p>
+                          <p className="text-xs text-muted-foreground">
+                            until {formatTime(s.closesAt)} · {s.checkedInCount} scanned
+                          </p>
+                        </div>
+                        {canScan && (
+                          <Button asChild size="sm">
+                            <Link to={`/scan?session=${s.id}`}>
+                              <ScanLineIcon /> Scan
+                            </Link>
+                          </Button>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Recent sessions</CardTitle>
+                  <CardDescription>The latest five</CardDescription>
+                  <CardAction>
+                    <Button asChild variant="ghost" size="sm">
+                      <Link to="/sessions">
+                        All <ArrowRightIcon />
                       </Link>
                     </Button>
+                  </CardAction>
+                </CardHeader>
+                <CardContent>
+                  {sessions.length === 0 ? (
+                    <p className="py-6 text-center text-sm text-muted-foreground">No sessions yet.</p>
+                  ) : (
+                    <ul className="divide-y">
+                      {sessions.slice(0, 5).map((s) => (
+                        <li key={s.id} className="flex items-center justify-between gap-3 py-2.5">
+                          <div className="min-w-0">
+                            <Link to={`/sessions/${s.id}`} className="truncate font-medium hover:underline">
+                              {s.title}
+                            </Link>
+                            <div className="text-xs text-muted-foreground">{formatDateTime(s.opensAt)}</div>
+                          </div>
+                          <StatusBadge status={s.status} />
+                        </li>
+                      ))}
+                    </ul>
                   )}
-                </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="lg:col-span-3">
-          <CardHeader>
-            <CardTitle>Recent sessions</CardTitle>
-            <CardDescription>The latest five</CardDescription>
-            <CardAction>
-              <Button asChild variant="ghost" size="sm">
-                <Link to="/sessions">
-                  View all <ArrowRightIcon />
-                </Link>
-              </Button>
-            </CardAction>
-          </CardHeader>
-          <CardContent>
-            {sessions.length === 0 ? (
-              <p className="py-6 text-center text-sm text-muted-foreground">No sessions yet.</p>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Session</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Checked in</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {sessions.slice(0, 5).map((s) => (
-                    <TableRow key={s.id}>
-                      <TableCell>
-                        <Link to={`/sessions/${s.id}`} className="font-medium hover:underline">
-                          {s.title}
-                        </Link>
-                        <div className="text-xs text-muted-foreground">{formatDateTime(s.opensAt)}</div>
-                      </TableCell>
-                      <TableCell>
-                        <StatusBadge status={s.status} />
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">{s.checkedInCount}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-    </div>
-  );
-}
-
-function StudentOverview({ attendance }: { attendance: MyAttendance[] }) {
-  const now = new Date();
-  const thisMonth = attendance.filter((a) => {
-    const d = new Date(a.scannedAt);
-    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-  }).length;
-  const last = attendance[0];
-
-  return (
-    <div className="grid gap-6">
-      <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard label="Total check-ins" value={attendance.length} icon={ClipboardCheckIcon} />
-        <StatCard label="This month" value={thisMonth} icon={CalendarCheckIcon} />
-        <StatCard label="Last check-in" value={last ? formatTime(last.scannedAt) : "–"} hint={last ? formatDate(last.scannedAt) : "no check-ins yet"} icon={CalendarClockIcon} />
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent attendance</CardTitle>
-          <CardDescription>Sessions you checked in to</CardDescription>
-          <CardAction>
-            <Button asChild variant="ghost" size="sm">
-              <Link to="/attendance">
-                View all <ArrowRightIcon />
-              </Link>
-            </Button>
-          </CardAction>
-        </CardHeader>
-        <CardContent>
-          {attendance.length === 0 ? (
-            <EmptyState icon={QrCodeIcon} title="No check-ins yet" description="Show your QR card or phone to your teacher's scanner at the start of class." />
-          ) : (
-            <ul className="divide-y">
-              {attendance.slice(0, 5).map((a) => (
-                <li key={a.id} className="flex items-center justify-between py-3">
-                  <span className="font-medium">{a.session.title}</span>
-                  <span className="text-sm text-muted-foreground">{formatDateTime(a.scannedAt)}</span>
-                </li>
-              ))}
-            </ul>
+                </CardContent>
+              </Card>
+            </div>
           )}
-        </CardContent>
-      </Card>
-    </div>
+        </div>
+      </div>
+    </>
   );
 }

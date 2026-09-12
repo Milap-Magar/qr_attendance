@@ -1,6 +1,6 @@
 import z from "zod";
 import { genderEnum, organizationTypeEnum } from "../../common/types/common.types";
-import { joinCodeSchema, organizationNameSchema } from "../organizations/organization.types";
+import { organizationNameSchema } from "../organizations/organization.types";
 
 // shared email rule: trims spaces and lowercases, so "Ram@X.com " and "ram@x.com" are the same account
 // (phone keyboards love capitalising the first letter)
@@ -13,14 +13,8 @@ export const emailSchema = z.email({
 export const passwordSchema = z.string().regex(/^(?=.*?[A-Z])(?=.*?[a-z])(?=.*?[0-9])(?=.*?[#?!@$%^&*-]).{8,}$/,
                     "Password must be at least 8 characters and contain an uppercase letter, lowercase letter, number, and special character.");
 
-// register user schema design — a STUDENT joining a school with its join code
-export const registerUserSchema = z.object({
-    name: z.string().trim().min(3).max(255),
-    email: emailSchema,
-    password: passwordSchema,
-    gender: z.enum(genderEnum).default("other"),
-    joinCode: joinCodeSchema,
-})
+// There is no student sign-up schema: students never have accounts. They are roster rows
+// their school adds (see modules/students), identified by a permanent QR card.
 
 // POST /api/auth/register-school — a new school signs up; the person signing up becomes its first admin.
 // Flat (not { school: {...}, admin: {...} }) so every field error maps straight onto a form input.
@@ -47,6 +41,5 @@ export const refreshTokenSchema = z.object({
     refreshToken: z.string().min(1, "refreshToken is required"),
 })
 
-export type registerUserTypes = z.infer<typeof registerUserSchema>;
 export type registerSchoolTypes = z.infer<typeof registerSchoolSchema>;
 export type loginUserTypes = z.infer<typeof loginUserSchema>;

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { createOrg, createTestApp, loginAs, PASSWORD, resetDb, type TestApp } from "./helpers";
+import { createClass, createOrg, createStudent, createTestApp, loginAs, PASSWORD, resetDb, type TestApp } from "./helpers";
 
 let app: TestApp;
 const inOneHour = () => new Date(Date.now() + 60 * 60 * 1000).toISOString();
@@ -61,34 +61,26 @@ describe("school sign-up + join codes", () => {
     expect(bad.json().code).toBe("INVALID_JOIN_CODE");
   });
 
-  test("a student registers with the join code → lands in that school", async () => {
-    const res = await app.inject({
-      method: "POST", url: "/api/auth/register",
-      payload: { name: "Hari Thapa", email: "hari@sunrise.edu", password: PASSWORD, joinCode: school.joinCode.toLowerCase() },
-    });
-    expect(res.statusCode).toBe(201);
-    expect(res.json().user).toMatchObject({ role: "users", organizationId: school.id });
-  });
-
-  test("register without / with a wrong join code fails", async () => {
-    const missing = await app.inject({ method: "POST", url: "/api/auth/register", payload: { name: "No Code", email: "nocode@test.com", password: PASSWORD } });
-    expect(missing.statusCode).toBe(400);
-    expect(missing.json().errors.joinCode).toBeArray();
-
-    const wrong = await app.inject({ method: "POST", url: "/api/auth/register", payload: { name: "Wrong Code", email: "wrong@test.com", password: PASSWORD, joinCode: "ZZZZ9999" } });
-    expect(wrong.statusCode).toBe(404);
-    expect(wrong.json().code).toBe("INVALID_JOIN_CODE");
-  });
-
-  test("admin sees the join code; a student of the same school does not", async () => {
+  test("admin sees the join code; a teacher of the same school does not", async () => {
     const asAdmin = (await app.inject({ method: "GET", url: "/api/organizations/current", headers: adminAuth })).json();
     expect(asAdmin.joinCode).toBe(school.joinCode);
 
-    const student = await loginAs(app, "users", { orgId: school.id });
-    const asStudent = await app.inject({ method: "GET", url: "/api/organizations/current", headers: student.auth });
-    expect(asStudent.statusCode).toBe(200);
-    expect(asStudent.json().name).toBe("Sunrise Academy");
-    expect(asStudent.json().joinCode).toBeUndefined();
+    const teacher = await loginAs(app, "teachers", { orgId: school.id });
+    const asTeacher = await app.inject({ method: "GET", url: "/api/organizations/current", headers: teacher.auth });
+    expect(asTeacher.statusCode).toBe(200);
+    expect(asTeacher.json().name).toBe("Sunrise Academy");
+    expect(asTeacher.json().joinCode).toBeUndefined();
+  });
+
+  // the timezone decides which calendar day a scan counts for, so a bad one would break scanning
+  test("admin sets the school timezone; nonsense is rejected", async () => {
+    const res = await app.inject({ method: "PATCH", url: "/api/organizations/current", headers: adminAuth, payload: { timezone: "Asia/Kathmandu" } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().timezone).toBe("Asia/Kathmandu");
+
+    const bad = await app.inject({ method: "PATCH", url: "/api/organizations/current", headers: adminAuth, payload: { timezone: "Mars/Olympus" } });
+    expect(bad.statusCode).toBe(400);
+    expect(bad.json().errors.timezone).toBeArray();
   });
 
   test("admin renames the school; teachers cannot", async () => {
@@ -114,7 +106,7 @@ describe("school sign-up + join codes", () => {
 describe("tenant isolation", () => {
   let adminA: Awaited<ReturnType<typeof loginAs>>;
   let adminB: Awaited<ReturnType<typeof loginAs>>;
-  let studentA: Awaited<ReturnType<typeof loginAs>>;
+  let studentA: Awaited<ReturnType<typeof createStudent>>;
   let cardA: { id: string; token: string };
   let sessionA: string;
   let sessionB: string;
@@ -123,8 +115,8 @@ describe("tenant isolation", () => {
     const [a, b] = await Promise.all([createOrg("School A"), createOrg("School B")]);
     adminA = await loginAs(app, "admin", { orgId: a.id });
     adminB = await loginAs(app, "admin", { orgId: b.id });
-    studentA = await loginAs(app, "users", { orgId: a.id });
-    cardA = (await app.inject({ method: "POST", url: "/api/qr/credentials", headers: adminA.auth, payload: { userId: studentA.user.id } })).json();
+    studentA = await createStudent(a.id, (await createClass(a.id)).id);
+    cardA = studentA.card;
     sessionA = (await app.inject({ method: "POST", url: "/api/attendance/sessions", headers: adminA.auth, payload: { title: "A class", closesAt: inOneHour() } })).json().id;
     sessionB = (await app.inject({ method: "POST", url: "/api/attendance/sessions", headers: adminB.auth, payload: { title: "B class", closesAt: inOneHour() } })).json().id;
   });
@@ -132,14 +124,25 @@ describe("tenant isolation", () => {
   test("user lists only contain your own school", async () => {
     const ids = (await app.inject({ method: "GET", url: "/api/users", headers: adminB.auth })).json().map((u: { id: string }) => u.id);
     expect(ids).toContain(adminB.user.id);
-    expect(ids).not.toContain(studentA.user.id);
     expect(ids).not.toContain(adminA.user.id);
   });
 
   test("another school's user is a 404 — read and edit", async () => {
-    expect((await app.inject({ method: "GET", url: `/api/users/${studentA.user.id}`, headers: adminB.auth })).statusCode).toBe(404);
-    const edit = await app.inject({ method: "PATCH", url: `/api/users/${studentA.user.id}`, headers: adminB.auth, payload: { name: "Hacked" } });
+    expect((await app.inject({ method: "GET", url: `/api/users/${adminA.user.id}`, headers: adminB.auth })).statusCode).toBe(404);
+    const edit = await app.inject({ method: "PATCH", url: `/api/users/${adminA.user.id}`, headers: adminB.auth, payload: { name: "Hacked" } });
     expect(edit.statusCode).toBe(404);
+  });
+
+  test("classes and students: B sees none of A's, and can't reach them by id", async () => {
+    expect((await app.inject({ method: "GET", url: "/api/classes", headers: adminB.auth })).json()).toHaveLength(0);
+    expect((await app.inject({ method: "GET", url: "/api/students", headers: adminB.auth })).json()).toHaveLength(0);
+    expect((await app.inject({ method: "GET", url: `/api/students/${studentA.student.id}`, headers: adminB.auth })).statusCode).toBe(404);
+    expect((await app.inject({ method: "GET", url: `/api/classes/${studentA.student.classId}/students`, headers: adminB.auth })).statusCode).toBe(404);
+  });
+
+  test("the register of A's class is a 404 at B", async () => {
+    const res = await app.inject({ method: "GET", url: `/api/attendance/register?classId=${studentA.student.classId}`, headers: adminB.auth });
+    expect(res.statusCode).toBe(404);
   });
 
   test("sessions: B can't list, read, close or see records of A's", async () => {
@@ -151,7 +154,7 @@ describe("tenant isolation", () => {
   });
 
   test("cards: B can't issue for, list, or revoke A's students", async () => {
-    expect((await app.inject({ method: "POST", url: "/api/qr/credentials", headers: adminB.auth, payload: { userId: studentA.user.id } })).statusCode).toBe(404);
+    expect((await app.inject({ method: "POST", url: "/api/qr/credentials", headers: adminB.auth, payload: { studentId: studentA.student.id } })).statusCode).toBe(404);
     expect((await app.inject({ method: "GET", url: "/api/qr/credentials", headers: adminB.auth })).json()).toHaveLength(0);
     expect((await app.inject({ method: "PATCH", url: `/api/qr/credentials/${cardA.id}/revoke`, headers: adminB.auth })).statusCode).toBe(404);
   });
@@ -200,7 +203,7 @@ describe("platform (system)", () => {
   });
 
   test("an access token from before schools existed (no orgId) → 401 so the client refreshes", async () => {
-    const legacy = app.jwt.sign({ userId: crypto.randomUUID(), role: "users" } as never);
+    const legacy = app.jwt.sign({ userId: crypto.randomUUID(), role: "teachers" } as never);
     expect((await app.inject({ method: "GET", url: "/api/users/me", headers: { authorization: `Bearer ${legacy}` } })).statusCode).toBe(401);
   });
 });

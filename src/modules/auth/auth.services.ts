@@ -1,7 +1,7 @@
 import { and, eq, gt, isNull } from "drizzle-orm"
 import { db } from "../../db"
 import { refreshTokens, users } from "../../db/schema"
-import type { loginUserTypes, registerSchoolTypes, registerUserTypes } from "./auth.types";
+import type { loginUserTypes, registerSchoolTypes } from "./auth.types";
 import bcrypt from 'bcryptjs';
 import { AppError } from "../../common/errors";
 import { generateToken, hashToken } from "../../common/crypto";
@@ -12,13 +12,6 @@ import { organizationServices } from "../organizations/organization.services";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export const authServices = {
-    // a student signs up INTO the school that owns the join code. Always a "users" (student) account.
-    // (the role is never taken from the request, otherwise anyone could sign up as admin)
-    async register({ joinCode, ...user }: registerUserTypes){
-        const organization = await organizationServices.findByJoinCode(joinCode); // 404 INVALID_JOIN_CODE
-        return await userServices.addUsers({ ...user, role: "users" }, organization.id);
-    },
-
     // a new school signs up: create the school AND its first admin, both or neither.
     async registerSchool({ schoolName, schoolType, ...admin }: registerSchoolTypes){
         return await db.transaction(async (tx) => {

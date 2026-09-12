@@ -9,6 +9,8 @@ import { config } from "./config";
 import { AppError } from "./common/errors";
 import { authRoutes } from "./modules/auth/auth.routes";
 import { userRoutes } from "./modules/users/user.routes";
+import { classRoutes } from "./modules/classes/class.routes";
+import { studentRoutes } from "./modules/students/student.routes";
 import { qrRoutes } from "./modules/qr/qr.routes";
 import { attendanceRoutes } from "./modules/attendance/attendance.routes";
 import { organizationRoutes } from "./modules/organizations/organization.routes";
@@ -74,6 +76,8 @@ export async function buildApp(options: FastifyServerOptions = { logger: true })
   // API routes
   await fastify.register(authRoutes, { prefix: "/api/auth" });
   await fastify.register(userRoutes, { prefix: "/api/users" });
+  await fastify.register(classRoutes, { prefix: "/api/classes" });
+  await fastify.register(studentRoutes, { prefix: "/api/students" });
   await fastify.register(qrRoutes, { prefix: "/api/qr" });
   await fastify.register(attendanceRoutes, { prefix: "/api/attendance" });
   await fastify.register(organizationRoutes, { prefix: "/api/organizations" });

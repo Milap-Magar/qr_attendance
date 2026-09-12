@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull, ne } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { db } from "../../db";
 import { users } from "../../db/schema";
@@ -26,11 +26,16 @@ const inOrg = (orgId: string | null) => (orgId ? eq(users.organizationId, orgId)
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 export const userServices = {
-  // everyone in one school (optionally only one role)
+  // The school's STAFF (optionally one role). Accounts with the legacy "users" role are left out:
+  // students used to be accounts, and any row left over from then is not staff and must not show
+  // up on the staff page. Ask for role="users" explicitly if you ever need to find them.
   async getAllUsers(orgId: string, role?: Role) {
     return await db.select(publicUserColumns)
       .from(users)
-      .where(and(eq(users.organizationId, orgId), role ? eq(users.role, role) : undefined))
+      .where(and(
+        eq(users.organizationId, orgId),
+        role ? eq(users.role, role) : ne(users.role, "users"),
+      ))
       .orderBy(asc(users.name));
   },
 

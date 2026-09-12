@@ -1,8 +1,10 @@
 import { z } from "zod";
 import { genderEnum, roleEnum, type Role } from "../../common/types/common.types";
 
-// roles a school can give its own people. `system` (platform operator) is only made from the CLI.
-export const schoolRoleEnum = ["admin", "teachers", "users"] as const;
+// Roles a school can hand out. STAFF ONLY — students are not accounts, so "users" is not here:
+// a school adds students through POST /api/students instead.
+// `system` (platform operator) is only ever made from the CLI.
+export const schoolRoleEnum = ["admin", "teachers"] as const;
 import { emailSchema, passwordSchema } from "../auth/auth.types";
 
 // POST /api/users — a school admin adds someone to THEIR school (can pick the role)
@@ -11,7 +13,8 @@ export const createUserSchemas = z.object({
     email: emailSchema,
     password: passwordSchema,
     gender: z.enum(genderEnum).default("other"),
-    role: z.enum(schoolRoleEnum).default("users"),
+    // teachers is the common case — a school adds far more teachers than admins
+    role: z.enum(schoolRoleEnum).default("teachers"),
 })
 
 // PATCH /api/users/:id — every field optional, send only what changed.

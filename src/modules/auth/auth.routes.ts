@@ -13,7 +13,7 @@
 
 import { type FastifyPluginAsync } from "fastify";
 import { authServices } from './auth.services';
-import { loginUserSchema, refreshTokenSchema, registerSchoolSchema, registerUserSchema } from './auth.types';
+import { loginUserSchema, refreshTokenSchema, registerSchoolSchema } from './auth.types';
 import type { Role } from "../../common/types/common.types";
 
 export const authRoutes : FastifyPluginAsync = async (fastify) => {
@@ -36,14 +36,9 @@ export const authRoutes : FastifyPluginAsync = async (fastify) => {
         return reply.status(201).send({ message: "School created", user, organization, ...tokens });
     })
 
-    // POST /api/auth/register — a student joins a school with its join code, logged in straight away
-    fastify.post("/register", async(request, reply) => {
-        // .parse() validates the body; on bad input it throws → 400 (see error handler in src/app.ts)
-        const body = registerUserSchema.parse(request.body);
-        const user = await authServices.register(body);
-        const tokens = await issueTokens(user);
-        return reply.status(201).send({ message: "User Created Successfully", user, ...tokens });
-    })
+    // There is no student sign-up. Students are roster entries added by their school
+    // (POST /api/students), never accounts — they hold up a QR card instead of logging in.
+    // Staff accounts are created by a school admin through POST /api/users.
 
     // POST /api/auth/login
     fastify.post("/login",  async (request, reply) => {

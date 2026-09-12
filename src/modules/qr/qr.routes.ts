@@ -6,39 +6,34 @@ import { qrServices } from "./qr.services";
 import { issueCredentialSchema, listCredentialsQuerySchema, scanSchema } from "./qr.types";
 
 // Flow:
-//   1. admin: POST /api/qr/credentials { userId }  → { token }  → print token as a QR on the ID card
-//   2. teacher: POST /api/attendance/sessions      → opens a class for scanning
-//   1b. or student: POST /api/qr/credentials/me    → { token }  → shown as a QR on their phone
-//   3. scanner laptop reads a card: POST /api/qr/scan { sessionId, token } → student name
+//   1. office: add a class, then its students   → every student gets a permanent QR card at once
+//                                                 (POST /api/students, /api/students/import)
+//      reprint a whole class                    → POST /api/classes/:id/cards
+//      reprint ONE lost card                    → POST /api/qr/credentials { studentId }
+//   2. teacher: POST /api/attendance/sessions   → opens a window for scanning
+//   3. scanner laptop reads a card: POST /api/qr/scan { sessionId, token }
+//                                                 → student name + class, marked present for today
 export const qrRoutes: FastifyPluginAsync = async (fastify) => {
 
-  // POST /api/qr/credentials — issue (or re-issue) a student's QR card
+  // POST /api/qr/credentials — re-issue ONE student's card. The card they had stops working.
+  // Responds with the plain `token`, the only time it is readable.
   fastify.post("/credentials", {
     preHandler: [authMiddleware, requirePermission("credentials:manage")],
   }, async (request, reply) => {
-    const { userId } = issueCredentialSchema.parse(request.body);
-    const credential = await qrServices.issueCredential(userId, orgIdOf(request));
+    const { studentId } = issueCredentialSchema.parse(request.body);
+    const credential = await qrServices.issueCredential(studentId, orgIdOf(request));
     return reply.status(201).send(credential);
   });
 
-  // POST /api/qr/credentials/me — a student turns THIS phone into their card.
-  // Replaces their previous phone's QR; the printed card keeps working.
-  fastify.post("/credentials/me", {
-    preHandler: [authMiddleware, requirePermission("qr:self")],
-  }, async (request, reply) => {
-    const credential = await qrServices.issueCredential(request.user.userId, orgIdOf(request), "device");
-    return reply.status(201).send(credential);
-  });
-
-  // GET /api/qr/credentials?userId=... — card history (never includes the token)
+  // GET /api/qr/credentials?studentId=... — card history (never includes the token)
   fastify.get("/credentials", {
     preHandler: [authMiddleware, requirePermission("credentials:manage")],
   }, async (request, reply) => {
-    const { userId } = listCredentialsQuerySchema.parse(request.query);
-    return reply.send(await qrServices.listCredentials(orgIdOf(request), userId));
+    const { studentId } = listCredentialsQuerySchema.parse(request.query);
+    return reply.send(await qrServices.listCredentials(orgIdOf(request), studentId));
   });
 
-  // PATCH /api/qr/credentials/:id/revoke — lost card
+  // PATCH /api/qr/credentials/:id/revoke — lost card, with no replacement printed yet
   fastify.patch("/credentials/:id/revoke", {
     preHandler: [authMiddleware, requirePermission("credentials:manage")],
   }, async (request, reply) => {

@@ -8,7 +8,6 @@ import {
   CreditCardIcon,
   LaptopIcon,
   ScanLineIcon,
-  SmartphoneIcon,
   TimerIcon,
   type LucideIcon,
 } from "lucide-react";
@@ -29,17 +28,17 @@ export async function clientLoader() {
 }
 
 const STEPS = [
-  { title: "Sign up your school", text: "Create your school in a minute. You get a join code for your students." },
-  { title: "Students get their QR", text: "They join with the code and show a QR on their phone, or you print ID cards." },
-  { title: "Scan at the door", text: "Open a session, point any laptop camera at the QR. Attendance is done." },
+  { title: "Sign up your school", text: "Create your school in a minute, then your classes: grade, section, academic year." },
+  { title: "Add students, print cards", text: "One by one or from a CSV. Every student gets one permanent QR card, ready to print." },
+  { title: "Scan at the door", text: "Open a session, point any laptop camera at the cards. The register fills itself in." },
 ];
 
 const FEATURES: { icon: LucideIcon; title: string; text: string }[] = [
-  { icon: SmartphoneIcon, title: "Phone or card", text: "Every student can have a printed card and a phone QR. Both work, and each can be replaced on its own." },
+  { icon: CreditCardIcon, title: "No accounts for students", text: "Students never log in, never forget a password. They are rows on a class list with one printed card each." },
   { icon: LaptopIcon, title: "No hardware", text: "The scanner is a web page. Any laptop with a camera, or a USB barcode scanner, works." },
-  { icon: CopyCheckIcon, title: "One scan, one check-in", text: "The database makes duplicates impossible, even when two scans arrive at the same moment." },
+  { icon: CopyCheckIcon, title: "One scan a day is enough", text: "The first scan into any open session marks a student present. Any teacher can scan any student." },
   { icon: TimerIcon, title: "Sessions close themselves", text: "Late scans are refused automatically, checked against the server clock rather than a laptop's." },
-  { icon: BanIcon, title: "Lost card? Revoke it", text: "One click kills the old QR and issues a new one. The old QR stops working immediately." },
+  { icon: BanIcon, title: "Lost card? Reprint it", text: "One click issues a new card. The old one stops working immediately." },
   { icon: Building2Icon, title: "Each school kept separate", text: "Schools never see each other's students, sessions or cards. It's enforced on every request." },
 ];
 
@@ -52,9 +51,6 @@ export default function Landing() {
             <Logo />
           </Link>
           <nav className="flex items-center gap-1 sm:gap-2">
-            <Button asChild variant="ghost" size="sm" className="hidden sm:inline-flex">
-              <Link to="/register">Join your school</Link>
-            </Button>
             <Button asChild variant="ghost" size="sm">
               <Link to="/login">Log in</Link>
             </Button>
@@ -77,8 +73,8 @@ export default function Landing() {
               Say <span className="text-primary">present</span> with a scan.
             </h1>
             <p className="max-w-lg text-lg text-pretty text-muted-foreground">
-              {BRAND.name} replaces the roll call. Students show a QR on their card or phone, the teacher's laptop scans it,
-              and attendance is recorded before the bell stops ringing.
+              {BRAND.name} replaces the roll call. Every student carries one printed QR card, the teacher's laptop scans it,
+              and the day's register is done before the bell stops ringing.
             </p>
             <div className="flex flex-wrap gap-3">
               <Button asChild size="lg">
@@ -87,10 +83,10 @@ export default function Landing() {
                 </Link>
               </Button>
               <Button asChild size="lg" variant="outline">
-                <Link to="/register">I'm a student</Link>
+                <Link to="/login">Log in</Link>
               </Button>
             </div>
-            <p className="text-sm text-muted-foreground">No credit card. No hardware. Set up in a minute.</p>
+            <p className="text-sm text-muted-foreground">No credit card. No hardware. No student accounts to manage.</p>
           </div>
           <HeroVisual />
         </div>
@@ -170,27 +166,25 @@ export default function Landing() {
   );
 }
 
-// a phone showing a student's QR, and the scanner's "checked in" result next to it
+// a student's printed card, and the scanner's "marked present" result next to it
 function HeroVisual() {
   return (
     <div className="relative mx-auto w-full max-w-sm md:max-w-none">
-      <div className="mx-auto w-64 rounded-[2.5rem] border-8 border-neutral-900 bg-neutral-900 shadow-2xl">
-        <div className="overflow-hidden rounded-[2rem] bg-white px-5 pt-8 pb-6 text-neutral-900">
-          <p className="text-center text-xs font-medium tracking-wide text-neutral-500 uppercase">My QR</p>
-          <div className="mt-4 rounded-2xl border p-3">
-            <QRCodeSVG value="https://hajir.app/demo" size={512} marginSize={1} className="h-auto w-full" fgColor="#1e1b4b" />
-          </div>
-          <p className="mt-4 text-center font-semibold">Sita Kumari</p>
-          <p className="text-center text-xs text-neutral-500">Sunrise Academy</p>
+      <div className="mx-auto w-64 rounded-2xl border bg-white p-5 text-neutral-900 shadow-2xl">
+        <p className="text-center text-xs font-medium tracking-wide text-neutral-500 uppercase">Sunrise Academy</p>
+        <div className="mt-4 rounded-xl border p-3">
+          <QRCodeSVG value="https://hajir.app/demo" size={512} marginSize={1} className="h-auto w-full" fgColor="#1e1b4b" />
         </div>
+        <p className="mt-4 text-center font-semibold">Sita Kumari</p>
+        <p className="text-center text-xs text-neutral-500">Roll 07 · 10 A</p>
       </div>
 
       <div className="absolute -bottom-4 left-0 w-60 rounded-xl border bg-background p-3 shadow-xl sm:-left-6 md:-left-10">
         <div className="flex items-center gap-3">
           <CheckCircle2Icon className="size-8 shrink-0 text-emerald-600" />
           <div className="min-w-0 text-sm">
-            <p className="font-semibold">Checked in</p>
-            <p className="truncate text-muted-foreground">Sita Kumari · Math 101</p>
+            <p className="font-semibold">Marked present</p>
+            <p className="truncate text-muted-foreground">Sita Kumari · Roll 07 · 10 A</p>
           </div>
         </div>
       </div>
@@ -199,7 +193,7 @@ function HeroVisual() {
         <ScanLineIcon className="size-3.5 text-primary" /> 28 / 30 present
       </div>
       <div className="absolute top-24 -left-2 hidden items-center gap-2 rounded-full border bg-background px-3 py-1.5 text-xs font-medium shadow-lg lg:flex">
-        <CreditCardIcon className="size-3.5 text-primary" /> Cards work too
+        <CreditCardIcon className="size-3.5 text-primary" /> One card, all year
       </div>
     </div>
   );

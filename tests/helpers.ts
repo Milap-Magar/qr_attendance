@@ -3,6 +3,8 @@ import { buildApp } from "../src/app";
 import { db } from "../src/db";
 import { userServices } from "../src/modules/users/user.service";
 import { organizationServices } from "../src/modules/organizations/organization.services";
+import { classServices } from "../src/modules/classes/class.services";
+import { studentServices } from "../src/modules/students/student.services";
 import type { Role } from "../src/common/types/common.types";
 
 export const PASSWORD = "Passw0rd!";
@@ -21,8 +23,33 @@ let defaultOrg: Promise<{ id: string; joinCode: string }> | null = null;
 
 // wipe every table between test files
 export async function resetDb() {
-  await db.execute(sql`TRUNCATE organizations, users, refresh_tokens, credentials, attendance_sessions, attendance_records CASCADE`);
+  await db.execute(sql`TRUNCATE organizations, users, refresh_tokens, classes, students, credentials, attendance_sessions, attendance_records CASCADE`);
   defaultOrg = null;
+  rollNo = 0;
+}
+
+// Roll numbers are unique per class, and most tests don't care what they are.
+// A counter keeps every generated student distinct without each test inventing one.
+let rollNo = 0;
+
+export function createClass(orgId: string, overrides: Partial<{ grade: string; section: string; academicYear: string }> = {}) {
+  return classServices.create({ grade: "10", section: "A", academicYear: "2026", ...overrides }, orgId);
+}
+
+// A roster entry plus its printable card, exactly the way the office creates one:
+// → { student, card } where `card.token` is the QR payload (readable only here).
+export function createStudent(orgId: string, classId: string, overrides: Partial<{ rollNo: string; name: string }> = {}) {
+  rollNo += 1;
+  return studentServices.create(
+    { classId, rollNo: String(rollNo), name: `Student ${rollNo}`, gender: "other", ...overrides },
+    orgId,
+  );
+}
+
+// the common setup: a school with one class and one student holding a working card
+export async function createStudentInNewClass(orgId: string) {
+  const group = await createClass(orgId, { section: crypto.randomUUID().slice(0, 4) });
+  return { class: group, ...(await createStudent(orgId, group.id)) };
 }
 
 export function createOrg(name = `School ${crypto.randomUUID().slice(0, 6)}`) {

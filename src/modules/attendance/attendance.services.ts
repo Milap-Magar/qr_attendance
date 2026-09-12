@@ -1,8 +1,11 @@
 import { and, asc, count, desc, eq, sql } from "drizzle-orm";
 import { db } from "../../db";
-import { attendanceRecords, attendanceSessions, users } from "../../db/schema";
+import { attendanceRecords, attendanceSessions, classes, students } from "../../db/schema";
 import { AppError } from "../../common/errors";
-import type { CreateSessionInput } from "./attendance.types";
+import { schoolDay } from "../../common/school-day";
+import { classLabel, classServices } from "../classes/class.services";
+import { organizationServices } from "../organizations/organization.services";
+import type { CreateSessionInput, DailyReportQuery } from "./attendance.types";
 
 export type SessionStatus = "upcoming" | "open" | "closed";
 
@@ -37,6 +40,10 @@ const withStatus = <T extends { opensAt: Date; closesAt: Date }>(session: T) => 
   ...session,
   status: sessionStatus(session),
 });
+
+// A register is read in roll-number order. Roll numbers are text, so "10" would sort before "2";
+// sorting by length first fixes that for numeric ones without breaking "2026/007".
+const byRollNo = [sql`length(${students.rollNo})`, asc(students.rollNo)];
 
 // Every function takes the caller's school (orgId). A session from another school is a 404,
 // exactly like one that doesn't exist.
@@ -75,33 +82,121 @@ export const attendanceServices = {
     return attendanceServices.getSession(id, orgId);
   },
 
-  // who checked in to this session, in scan order
+  // who was scanned in this session, in scan order, with the class each student belongs to
   async getSessionRecords(sessionId: string, orgId: string) {
     await attendanceServices.getSession(sessionId, orgId); // 404 if missing / other school
-    return await db
+    const rows = await db
       .select({
         id: attendanceRecords.id,
         scannedAt: attendanceRecords.scannedAt,
         scannedBy: attendanceRecords.scannedBy,
-        student: { id: users.id, name: users.name, email: users.email },
+        attendanceDate: attendanceRecords.attendanceDate,
+        student: { id: students.id, name: students.name, rollNo: students.rollNo },
+        class: { id: classes.id, grade: classes.grade, section: classes.section },
       })
       .from(attendanceRecords)
-      .innerJoin(users, eq(users.id, attendanceRecords.userId))
+      .innerJoin(students, eq(students.id, attendanceRecords.studentId))
+      .innerJoin(classes, eq(classes.id, students.classId))
       .where(eq(attendanceRecords.sessionId, sessionId))
       .orderBy(asc(attendanceRecords.scannedAt));
+
+    return rows.map((row) => ({ ...row, class: { ...row.class, label: classLabel(row.class) } }));
   },
 
-  // a student's own history, newest first
-  async getMyAttendance(userId: string) {
+  // THE REPORT. One class, one day, every student on the roster — present or absent, by roll number.
+  //
+  // It starts from `students` and LEFT JOINs the day's record, which is what makes absences
+  // visible: a student with no record simply has no scan, and that is the answer, not missing data.
+  async getDailyRegister({ classId, date }: DailyReportQuery, orgId: string) {
+    const group = await classServices.getById(classId, orgId); // 404 if missing / other school
+    // no date given → the school's today, in ITS timezone, not the server's
+    const day = date ?? schoolDay(await organizationServices.timezoneOf(orgId));
+
+    const roster = await db
+      .select({
+        student: { id: students.id, name: students.name, rollNo: students.rollNo, gender: students.gender },
+        scannedAt: attendanceRecords.scannedAt,
+        sessionId: attendanceRecords.sessionId,
+      })
+      .from(students)
+      // the join is ON the date as well, so this is "that student's record FOR THAT DAY",
+      // not "any record they ever had"
+      .leftJoin(attendanceRecords, and(
+        eq(attendanceRecords.studentId, students.id),
+        eq(attendanceRecords.attendanceDate, day),
+      ))
+      .where(and(eq(students.classId, classId), eq(students.isActive, true)))
+      .orderBy(...byRollNo);
+
+    const entries = roster.map(({ student, scannedAt, sessionId }) => ({
+      ...student,
+      present: scannedAt !== null,
+      scannedAt,
+      sessionId,
+    }));
+    const present = entries.filter((entry) => entry.present).length;
+
+    return {
+      date: day,
+      class: { id: group.id, label: group.label, academicYear: group.academicYear },
+      present,
+      absent: entries.length - present,
+      total: entries.length,
+      students: entries,
+    };
+  },
+
+  // School-wide summary for one day: every class with its present/absent tally.
+  // The landing page for "how did today go".
+  async getDailySummary(date: string | undefined, orgId: string) {
+    const day = date ?? schoolDay(await organizationServices.timezoneOf(orgId));
+
+    const rows = await db
+      .select({
+        id: classes.id,
+        grade: classes.grade,
+        section: classes.section,
+        academicYear: classes.academicYear,
+        total: count(students.id),
+        present: sql<number>`count(${attendanceRecords.id})`.mapWith(Number),
+      })
+      .from(classes)
+      .leftJoin(students, and(eq(students.classId, classes.id), eq(students.isActive, true)))
+      .leftJoin(attendanceRecords, and(
+        eq(attendanceRecords.studentId, students.id),
+        eq(attendanceRecords.attendanceDate, day),
+      ))
+      .where(eq(classes.organizationId, orgId))
+      .groupBy(classes.id)
+      .orderBy(sql`${classes.academicYear} desc`, sql`length(${classes.grade})`, asc(classes.grade), asc(classes.section));
+
+    const classSummaries = rows.map((row) => ({
+      ...row,
+      label: classLabel(row),
+      absent: row.total - row.present,
+    }));
+
+    return {
+      date: day,
+      present: classSummaries.reduce((sum, row) => sum + row.present, 0),
+      total: classSummaries.reduce((sum, row) => sum + row.total, 0),
+      classes: classSummaries,
+    };
+  },
+
+  // one student's own history, newest first — for the student detail page
+  async getStudentAttendance(studentId: string, orgId: string) {
     return await db
       .select({
         id: attendanceRecords.id,
+        attendanceDate: attendanceRecords.attendanceDate,
         scannedAt: attendanceRecords.scannedAt,
-        session: { id: attendanceSessions.id, title: attendanceSessions.title, opensAt: attendanceSessions.opensAt },
+        session: { id: attendanceSessions.id, title: attendanceSessions.title },
       })
       .from(attendanceRecords)
       .innerJoin(attendanceSessions, eq(attendanceSessions.id, attendanceRecords.sessionId))
-      .where(eq(attendanceRecords.userId, userId))
-      .orderBy(desc(attendanceRecords.scannedAt));
+      .innerJoin(students, eq(students.id, attendanceRecords.studentId))
+      .where(and(eq(attendanceRecords.studentId, studentId), eq(students.organizationId, orgId)))
+      .orderBy(desc(attendanceRecords.attendanceDate));
   },
 };

@@ -45,6 +45,19 @@ export async function clientAction({ request }: Route.ClientActionArgs) {
 
 type LogEntry = { key: number; tone: "success" | "warning" | "error"; title: string; detail: string; at: Date };
 
+// The scanner never decides who belongs in the room: any teacher may scan any student, and the
+// first scan of the day into any open session is what marks them present.
+function toEntry(data: NonNullable<Awaited<ReturnType<typeof clientAction>>>): LogEntry {
+  if (data.ok) {
+    const { student } = data.result;
+    return { key: Date.now(), tone: "success", title: student.name, detail: `Roll ${student.rollNo} · ${student.class.label}`, at: new Date() };
+  }
+  // ALREADY_PRESENT is not a failure — the student IS present. The server's message already
+  // names them and the time they were first scanned, so show it as-is.
+  const tone = data.code === "ALREADY_PRESENT" ? "warning" : "error";
+  return { key: Date.now(), tone, title: data.error, detail: hint(data.code), at: new Date() };
+}
+
 export default function Scan({ loaderData }: Route.ComponentProps) {
   const { sessions, selected } = loaderData;
   const [, setSearchParams] = useSearchParams();
@@ -65,11 +78,7 @@ export default function Scan({ loaderData }: Route.ComponentProps) {
   // every finished scan goes to the top of the log
   useEffect(() => {
     if (fetcher.state !== "idle" || !fetcher.data) return;
-    const data = fetcher.data;
-    const entry: LogEntry = data.ok
-      ? { key: Date.now(), tone: "success", title: data.result.student.name, detail: data.result.student.email, at: new Date() }
-      : { key: Date.now(), tone: data.code === "ALREADY_SCANNED" ? "warning" : "error", title: data.error, detail: hint(data.code), at: new Date() };
-    setLog((prev) => [entry, ...prev].slice(0, 20));
+    setLog((prev) => [toEntry(fetcher.data!), ...prev].slice(0, 20));
   }, [fetcher.state, fetcher.data]);
 
   if (!selected) {
@@ -89,7 +98,7 @@ export default function Scan({ loaderData }: Route.ComponentProps) {
 
   return (
     <>
-      <PageHeader title="Scanner" description="Hold a student's QR card up to the camera.">
+      <PageHeader title="Scanner" description="Hold a student's card up to the camera. Any student, any teacher — the first scan of the day marks them present.">
         <Select value={selected.id} onValueChange={(id) => setSearchParams({ session: id })}>
           <SelectTrigger className="w-64">
             <SelectValue />
@@ -201,8 +210,18 @@ function ResultPanel({ entry, busy }: { entry?: LogEntry; busy: boolean }) {
   return (
     <div key={entry.key} className={cn("flex flex-col items-center gap-2 rounded-xl border p-8 text-center animate-in fade-in zoom-in-95", toneStyles[entry.tone])}>
       <ToneIcon tone={entry.tone} className="size-10" />
-      <p className="text-lg font-semibold">{entry.tone === "success" ? "Checked in" : entry.title}</p>
-      <p className="text-sm opacity-80">{entry.tone === "success" ? `${entry.title} · ${entry.detail}` : entry.detail}</p>
+      {entry.tone === "success" ? (
+        <>
+          <p className="text-xs font-medium tracking-wide uppercase opacity-80">Marked present</p>
+          <p className="text-2xl font-semibold">{entry.title}</p>
+          <p className="text-sm opacity-80">{entry.detail}</p>
+        </>
+      ) : (
+        <>
+          <p className="text-lg font-semibold text-balance">{entry.title}</p>
+          <p className="text-sm opacity-80">{entry.detail}</p>
+        </>
+      )}
     </div>
   );
 }
@@ -216,12 +235,14 @@ function ToneIcon({ tone, className }: { tone: LogEntry["tone"]; className?: str
 // friendlier second line for each error code the backend can return
 function hint(code?: string) {
   switch (code) {
-    case "ALREADY_SCANNED":
-      return "No need to scan again.";
+    case "ALREADY_PRESENT":
+      return "No need to scan again today.";
     case "QR_NOT_FOUND":
       return "This code isn't a student card.";
     case "QR_REVOKED":
-      return "This card was replaced or reported lost.";
+      return "This card was replaced or reported lost. The office can print a new one.";
+    case "STUDENT_INACTIVE":
+      return "This student has left the school.";
     case "SESSION_CLOSED":
     case "SESSION_NOT_OPEN":
       return "Pick an open session.";

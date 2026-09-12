@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { organizationTypeEnum } from "../../common/types/common.types";
 import { normalizeJoinCode } from "../../common/crypto";
+import { isValidTimezone } from "../../common/school-day";
 
 export const organizationNameSchema = z.string().trim().min(3, "Name must be at least 3 characters").max(255);
 
@@ -14,10 +15,16 @@ export const lookupQuerySchema = z.object({
     code: joinCodeSchema,
 })
 
+// An IANA name like "Asia/Kathmandu". Validated against what this runtime actually knows,
+// because a name Intl can't resolve would throw on every scan from then on.
+export const timezoneSchema = z.string().trim().min(1).max(64)
+    .refine(isValidTimezone, "Unknown timezone. Use an IANA name like Asia/Kathmandu");
+
 // PATCH /api/organizations/current
 export const updateOrganizationSchema = z.object({
     name: organizationNameSchema.optional(),
     type: z.enum(organizationTypeEnum).optional(),
+    timezone: timezoneSchema.optional(),
 }).refine((data) => Object.values(data).some((value) => value !== undefined), {
     message: "Send at least one field to update",
 })

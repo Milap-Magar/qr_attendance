@@ -63,17 +63,12 @@ export default function Login({ actionData }: Route.ComponentProps) {
         </Button>
         <div className="grid gap-1 text-center text-sm text-muted-foreground">
           <p>
-            Student?{" "}
-            <Link to="/register" className="font-medium text-foreground underline-offset-4 hover:underline">
-              Join your school
-            </Link>
-          </p>
-          <p>
             New school or college?{" "}
             <Link to="/signup" className="font-medium text-foreground underline-offset-4 hover:underline">
               Start free
             </Link>
           </p>
+          <p>Students don't log in — they just show their card.</p>
         </div>
       </Form>
     </AuthShell>

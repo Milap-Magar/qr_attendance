@@ -128,9 +128,23 @@
     @apply font-sans;
   }
 }
-/* QR card dialog: when printing, show only the card */
+/* Printing. Two cases, and only one can be on screen at a time:
+   .print-area  — one QR card, inside a dialog
+   .card-sheet  — a whole class's cards, which must flow across several A4 pages */
 @media print {
-  body * { visibility: hidden; }
-  .print-area, .print-area * { visibility: visible; }
-  .print-area { position: fixed; inset: 0; margin: auto; }
+  @page { size: A4 portrait; margin: 10mm; }
+
+  /* one card: hide the rest of the page and centre the card on the sheet */
+  body:not(:has(.card-sheet)) * { visibility: hidden; }
+  body:not(:has(.card-sheet)) .print-area,
+  body:not(:has(.card-sheet)) .print-area * { visibility: visible; }
+  body:not(:has(.card-sheet)) .print-area { position: fixed; inset: 0; margin: auto; }
+
+  /* A class sheet portals to <body>, so everything else can be display:none — visibility:hidden
+     would keep the app's blank space and push the first card onto page four. */
+  body:has(.card-sheet) > *:not(.card-sheet) { display: none !important; }
+  .card-sheet { position: static !important; overflow: visible !important; background: #fff !important; padding: 0 !important; }
+  .card-sheet .no-print { display: none !important; }
+  .card-sheet-grid { display: grid !important; grid-template-columns: repeat(3, 1fr) !important; gap: 4mm !important; }
+  .qr-card { break-inside: avoid; height: 62mm; box-shadow: none !important; }
 }

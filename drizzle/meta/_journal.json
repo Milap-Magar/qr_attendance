@@ -29,6 +29,20 @@
       "when": 1789118357709,
       "tag": "0003_organizations",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789228349605,
+      "tag": "0004_student_rosters_drop_old",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1789228367664,
+      "tag": "0005_student_rosters_link",
+      "breakpoints": true
     }
   ]
 }
