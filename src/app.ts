@@ -1,12 +1,13 @@
 // Builds the Fastify app WITHOUT starting it.
 //   index.ts  → buildApp() + listen()      (the real server)
 //   tests     → buildApp() + app.inject()  (fake requests, no port needed)
-import Fastify, { type FastifyServerOptions } from "fastify";
+import Fastify, { LogController, type FastifyServerOptions } from "fastify";
 import fastifyJwt from "@fastify/jwt";
 import cors from "@fastify/cors";
 import { ZodError, z } from "zod";
 import { config } from "./config";
 import { AppError } from "./common/errors";
+import { loggerOptions, registerRequestLogging, registerRouteList } from "./common/logger";
 import { authRoutes } from "./modules/auth/auth.routes";
 import { userRoutes } from "./modules/users/user.routes";
 import { classRoutes } from "./modules/classes/class.routes";
@@ -15,8 +16,14 @@ import { qrRoutes } from "./modules/qr/qr.routes";
 import { attendanceRoutes } from "./modules/attendance/attendance.routes";
 import { organizationRoutes } from "./modules/organizations/organization.routes";
 
-export async function buildApp(options: FastifyServerOptions = { logger: true }) {
-  const fastify = Fastify(options);
+export async function buildApp(options: FastifyServerOptions = { logger: loggerOptions }) {
+  // one summary line per request instead of Fastify's two (see src/common/logger.ts)
+  const fastify = Fastify({
+    logController: new LogController({ disableRequestLogging: true }),
+    ...options,
+  });
+  registerRequestLogging(fastify);
+  registerRouteList(fastify);
 
   // let the frontend (another origin, e.g. localhost:5173) call this API
   await fastify.register(cors, {

@@ -45,6 +45,18 @@ bun run create-user --role system --name "Platform Owner" --email you@hajir.app 
 | `bun run create-user --name .. --email .. --password .. --role system` | create a platform operator |
 | `bun run create-user --school <JOINCODE> --name .. --email .. --password .. [--role admin\|teachers\|users]` | add someone to a school from the terminal |
 
+## Logging
+
+On startup the server prints every API route. Then each request logs one line when it finishes
+(5xx = `ERROR`, 4xx = `WARN`, rest = `INFO`; `/health` only at `debug`):
+
+```
+[10:42:01] INFO: POST /api/qr/scan 200 8.3ms {"reqId":"req-7","userId":"…","role":"teachers","ip":"127.0.0.1"}
+```
+
+Pretty colored output by default; set `NODE_ENV=production` for JSON lines. `LOG_LEVEL` = `debug`, `info` (default),
+`warn`, `error`, `silent`. Passwords, tokens and the `Authorization` header are redacted. Setup: `src/common/logger.ts`.
+
 ## Tests
 
 Tests wipe every table, so they run against a **separate** database.
@@ -68,7 +80,7 @@ index.ts                  starts the server (DB check → migrations → listen)
 src/app.ts                builds the Fastify app: CORS, JWT, error handler, routes
 src/config.ts             every environment variable, in one place
 src/db/schema.ts          all tables
-src/common/               AppError, token helpers, shared types
+src/common/               AppError, logger, token helpers, shared types
 src/modules/<name>/
    *.routes.ts            HTTP: validate input → call service → send reply
    *.services.ts          logic + database

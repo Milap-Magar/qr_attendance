@@ -23,4 +23,9 @@ export const config = {
   // which frontend origins may call the API, comma separated.
   // unset = allow any origin (fine for local dev, set it in production)
   corsOrigin: process.env.CORS_ORIGIN?.split(",").map((o) => o.trim()) ?? true,
+
+  // production = JSON logs; anything else = pretty colored logs
+  isProduction: process.env.NODE_ENV === "production",
+  // trace | debug | info | warn | error | fatal | silent
+  logLevel: process.env.LOG_LEVEL ?? "info",
 };
